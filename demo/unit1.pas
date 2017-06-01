@@ -840,64 +840,79 @@ end;
 // Actions on hypertext clicks
 procedure TForm1.RichView1Jump(Sender: TObject; id: Integer);
 begin
-  with RichView1 do
-    case id-FirstJumpNo of
-      0..14, 19, 20: ScrollTo(GetCheckPointY(JumpToCPNo(id-FirstJumpNo)));
-      15: begin frmBackStyle.ShowModal; RichView1.Refresh; end;
-      16: begin
-            RVPrint1.AssignSource(RichView1);
-            RVPrint1.FormatPages([rvdoImages, rvdoBullets]);
-            RVPrint1.MakePreview(1, frmPrint.Image1.Picture.Bitmap);
-            if frmPrint.ShowModal=mrOk then RVPrint1.Print('TRichView Demo', 1, False);
-          end;
-      17: begin;
-            SaveDialog1.DefaultExt := 'txt';
-            SaveDialog1.Title := 'Save text file';
-            SaveDialog1.Filter := 'Text Files|*.txt';
-            if SaveDialog1.Execute then
-              RichView1.SaveText(SaveDialog1.FileName, 65);
-          end;
-      18: begin
-            SaveDialog1.DefaultExt := 'htm';
-            SaveDialog1.Title := 'Save HTML File';
-            SaveDialog1.Filter := 'HTML files|*.htm;*.html';
-            if SaveDialog1.Execute then
-              RichView1.SaveHTML(SaveDialog1.FileName,'TRichView Help', 'rvimg', [rvsoOverrideImages]);
-          end;
-      21: ScrollTo(GetJumpPointY(FirstJumpNo));
+  case id-RichView1.FirstJumpNo of
+    0..14, 19, 20:
+      RichView1.ScrollTo(RichView1.GetCheckPointY(JumpToCPNo(id-RichView1.FirstJumpNo)));
+
+    15:
+    begin
+      frmBackStyle.ShowModal();
+      RichView1.Refresh();
     end;
+
+    16:
+    begin
+      RVPrint1.AssignSource(RichView1);
+      RVPrint1.FormatPages([rvdoImages, rvdoBullets]);
+      RVPrint1.MakePreview(1, frmPrint.Image1.Picture.Bitmap);
+      if frmPrint.ShowModal = mrOk then
+        RVPrint1.Print('TRichView Demo', 1, False);
+    end;
+
+    17:
+    begin;
+      SaveDialog1.DefaultExt := 'txt';
+      SaveDialog1.Title := 'Save text file';
+      SaveDialog1.Filter := 'Text Files|*.txt';
+      if SaveDialog1.Execute then
+        RichView1.SaveText(SaveDialog1.FileName, 65);
+    end;
+
+    18:
+    begin
+      SaveDialog1.DefaultExt := 'htm';
+      SaveDialog1.Title := 'Save HTML File';
+      SaveDialog1.Filter := 'HTML files|*.htm;*.html';
+      if SaveDialog1.Execute then
+        RichView1.SaveHTML(SaveDialog1.FileName,'TRichView Help', 'rvimg', [rvsoOverrideImages]);
+    end;
+
+    21:
+      RichView1.ScrollTo(RichView1.GetJumpPointY(RichView1.FirstJumpNo));
+  end;
 end;
 {------------------------------------------------------------------}
 // Event Handler
 // Actions on mouse moving over RichView1
 procedure TForm1.RichView1RVMouseMove(Sender: TObject; id: Integer);
 begin
-  if id = -1 then begin
+  if id = -1 then
+  begin
     StatusBar1.SimpleText := ''; // mouse pointer is not above link
-    exit;
+    Exit;
   end;
-  with RichView1 do
-    case id-FirstJumpNo of
-      0: StatusBar1.SimpleText := 'Go to Introduction';
-      1,19,20: StatusBar1.SimpleText := 'Go to Text Styles';
-      2: StatusBar1.SimpleText := 'Go to Adding Text';
-      3: StatusBar1.SimpleText := 'Go to Adding Pictures';
-      4: StatusBar1.SimpleText := 'Go to Adding Controls';
-      5, 13: StatusBar1.SimpleText := 'Go to Hypertext';
-      6: StatusBar1.SimpleText := 'Go to Other Properties';
-      7: StatusBar1.SimpleText := 'Go to New in version 0.3';
-      8: StatusBar1.SimpleText := 'Go to Printing (v0.4)';
-      9: StatusBar1.SimpleText := 'Go to Saving (v0.4)';
-     10: StatusBar1.SimpleText := 'Go to New in version 0.4';
-     11: StatusBar1.SimpleText := 'Go to New in version 0.5';
-     12: StatusBar1.SimpleText := 'Information about further development of this components';
-     14: StatusBar1.SimpleText := 'Go to AddBreak method';
-     15: StatusBar1.SimpleText := 'Show Background Styles Dialog';
-     16: StatusBar1.SimpleText := 'Print this Help';
-     17: StatusBar1.SimpleText := 'Save this Help as text file';
-     18: StatusBar1.SimpleText := 'Save this Help as html file';
-     21: StatusBar1.SimpleText := 'Go to first hypertext link';
-    end;
+
+  case id-RichView1.FirstJumpNo of
+    0: StatusBar1.SimpleText := 'Go to Introduction';
+    1,19,20: StatusBar1.SimpleText := 'Go to Text Styles';
+    2: StatusBar1.SimpleText := 'Go to Adding Text';
+    3: StatusBar1.SimpleText := 'Go to Adding Pictures';
+    4: StatusBar1.SimpleText := 'Go to Adding Controls';
+    5, 13: StatusBar1.SimpleText := 'Go to Hypertext';
+    6: StatusBar1.SimpleText := 'Go to Other Properties';
+    7: StatusBar1.SimpleText := 'Go to New in version 0.3';
+    8: StatusBar1.SimpleText := 'Go to Printing (v0.4)';
+    9: StatusBar1.SimpleText := 'Go to Saving (v0.4)';
+   10: StatusBar1.SimpleText := 'Go to New in version 0.4';
+   11: StatusBar1.SimpleText := 'Go to New in version 0.5';
+   12: StatusBar1.SimpleText := 'Information about further development of this components';
+   14: StatusBar1.SimpleText := 'Go to AddBreak method';
+   15: StatusBar1.SimpleText := 'Show Background Styles Dialog';
+   16: StatusBar1.SimpleText := 'Print this Help';
+   17: StatusBar1.SimpleText := 'Save this Help as text file';
+   18: StatusBar1.SimpleText := 'Save this Help as html file';
+   21: StatusBar1.SimpleText := 'Go to first hypertext link';
+  end;
 end;
 {------------------------------------------------------------------}
 // Event Handler

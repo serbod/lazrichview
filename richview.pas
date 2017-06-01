@@ -204,15 +204,16 @@ type
     SaveOptions: TRVSaveOptions;
 
     ShareContents: Boolean;
+    FClientTextWidth: Boolean;
 
-    procedure Notification(AComponent: TComponent; Operation: TOperation);override;
+    procedure Notification(AComponent: TComponent; Operation: TOperation); override;
     procedure Click(); override;
     procedure MouseMove(Shift: TShiftState; X, Y: Integer); override;
-    procedure MouseUp(Button: TMouseButton; Shift: TShiftState; X, Y: Integer);override;
-    procedure MouseDown(Button: TMouseButton; Shift: TShiftState; X, Y: Integer);override;
+    procedure MouseUp(Button: TMouseButton; Shift: TShiftState; X, Y: Integer); override;
+    procedure MouseDown(Button: TMouseButton; Shift: TShiftState; X, Y: Integer); override;
     procedure DblClick; override;    
     procedure KeyDown(var Key: Word; Shift: TShiftState); override;
-    procedure FormatLine(no: Integer; var x,baseline,prevdesc,prevabove:Integer; Canvas: TCanvas;
+    procedure FormatLine(no: Integer; var x, baseline, prevdesc, prevabove: Integer; Canvas: TCanvas;
                          var sad: TScreenAndDevice);
     procedure AdjustJumpsCoords;
     procedure AdjustChildrenCoords;
@@ -241,71 +242,149 @@ type
     //property OnKeyDown;
     //property OnKeyUp;
     //property OnKeyPress;
+
+    { You can use this property to set base value of hypertext link indices.
+      It will allow you use sole handlers of OnJump and OnRVMouseMove events for
+      several TRichView controls.}
     property FirstJumpNo: Integer read FFirstJumpNo write FFirstJumpNo;
+    { When user clicks at hypertext link. id - index of link }
     property OnJump: TJumpEvent read FOnJump write FOnJump;
+    { When mouse pointer moves above control.
+      id - index of link (-1 if mouse pointer is not above any link).
+      Not sent twice with equal id one after another. }
     property OnRVMouseMove: TRVMouseMoveEvent read FOnRVMouseMove write FOnRVMouseMove;
     property OnSaveComponentToFile: TRVSaveComponentToFileEvent read FOnSaveComponentToFile write FOnSaveComponentToFile;
     property OnURLNeeded: TRVURLNeededEvent read FOnURLNeeded write FOnURLNeeded;
     property OnRVDblClick: TRVDblClickEvent read FOnRVDblClick write FOnRVDblClick;
     property OnRVRightClick: TRVRightClickEvent read FOnRVRightClick write FOnRVRightClick;
+    { When selection is made (user releases mouse button, or SelectAll() or Deselect() is called. }
     property OnSelect: TNotifyEvent read FOnSelect write FOnSelect;
     property OnResized: TNotifyEvent read FOnResized write FOnResized;
     property Style: TRVStyle read FStyle write FStyle;
+    { Limitation of text width in pixels. Default value = 0. }
     property MaxTextWidth:Integer read FMaxTextWidth write FMaxTextWidth;
+    { Limitation of text width in pixels. Default value = 0. }
     property MinTextWidth:Integer read FMinTextWidth write FMinTextWidth;
+    { Margin in pixels. Default value = 5 pixels. }
     property LeftMargin: Integer read FLeftMargin write FLeftMargin;
+    { Margin in pixels. Default value = 5 pixels. }
     property RightMargin: Integer read FRightMargin write FRightMargin;
+    { Background image appeared according to BackgroundStyle property }
     property BackgroundBitmap: TBitmap read FBackBitmap write SetBackBitmap;
+    { Background image style:
+      bsNoBitmap - bitmap is ignored
+      bsStretched - bitmap is stretched to fit component size and do not scrolled
+      bsTiled - bitmap is tiled and do not scrolled
+      bsTiledAndScrolled - bitmap is tiled and scrolls with other contents of component }
     property BackgroundStyle: TBackgroundStyle read FBackgroundStyle write SetBackgroundStyle;
     property Delimiters: string read FDelimiters write FDelimiters;
+    { Permits or forbids selecting }
     property AllowSelection: Boolean read FAllowSelection write FAllowSelection;
+    { If True then OnRVDblClick is triggered on click, not on doubleclick.
+      You can use this property to create dialogs like Syntax Highlighting Dialog in Delphi. }
     property SingleClick: Boolean read FSingleClick write FSingleClick;
 
   public
     { Public declarations }
     DisplayOptions: TRVDisplayOptions;
-    FClientTextWidth: Boolean;
     constructor Create(AOwner: TComponent); override;
-    destructor Destroy; override;
-    procedure Paint; override;
+    destructor Destroy(); override;
+    procedure Paint(); override;
+    { Add one new line of text (line must not contain CR-LF characters) }
     procedure AddFromNewLine(const s: string; StyleNo: Integer);
+    { Append text to the end of last line (line must not contain CR-LF characters) }
     procedure Add(const s: string; StyleNo: Integer);
+    { Add one new line of text with center alignment (line must not contain CR-LF characters) }
     procedure AddCenterLine(const s: string; StyleNo: Integer);
+    { Add one or more lines. First line appends to the end of previous text }
     procedure AddText(s: string; StyleNo: Integer);
+    { Add one or more lines }
     procedure AddTextFromNewLine(s: string; StyleNo: Integer);
-    procedure AddBreak;
-    function AddCheckPoint: Integer; { returns cp # }
-    function AddNamedCheckPoint(const CpName: String): Integer; { returns cp # }
+    { Adds horizontal line with color of text style rvsNormal }
+    procedure AddBreak();
+    { Adds invisible label (checkpoint). Method returns index of checkpoint
+      (First checkpoint has index 0, second- 1, ...).
+      You can get Y coordinate of checkpoint by method GetCheckPointY. }
+    function AddCheckPoint(): Integer;
+    { Adds new checkpoint with name CpName and returns index of added checkpoint.
+      This checkpoint works just as normal one (added by method AddCheckPoint),
+      but also defines a section of document. }
+    function AddNamedCheckPoint(const CpName: string): Integer;
+    { Returns Y coordinate (in pixels) of hypertext link from hypertext link index.
+      You can use this method for scrolling. }
     function GetCheckPointY(no: Integer): Integer;
+    { Returns Y coordinate (in pixels) of checkpoint from checkpoint index.
+      You can use this method for scrolling. }
     function GetJumpPointY(no: Integer): Integer;
+    { Adds picture with center alignment. This method DOES NOT COPY picture from
+      argument, only makes pointer to it. Memory is released when you call method Clear()
+      or when control is destroyed. Do not destroy this picture yourself!
+      TRichView control provides flicker-free scrolling of pictures. }
     procedure AddPicture(gr: TGraphic);
+    { Adds image-hypertext link. Parameters are the same as in the method AddBullet. }
     procedure AddHotSpot(imgNo: Integer; lst: TImageList; FromNewLine: Boolean);
+    { Adds picture imgNo from ImageList at the new line or not. }
     procedure AddBullet(imgNo: Integer; lst: TImageList; FromNewLine: Boolean);
+    { Adds ANY visible Delphi control with center (True) or left (False) alignment.
+      This method adds element, which is drawed and processed by control itself,
+      not by RichView. It works the same way as if it was inserted in any other Delphi control.
+      WARNING - These componets will be destroyed when you call method Clear()
+      or when TRichView control is destroyed. Do not destroy them yourself! }
     procedure AddControl(ctrl: TControl; center: Boolean); reintroduce;
 
     function GetMaxPictureWidth(): Integer;
+    { Deletes all text, graphic and other objects from TRichView control }
     procedure Clear();
+    { Prepares control to display text and graphics. You must call it after
+      - you have added text and graphics (main reason)
+      - you have changed text styles of linked TRVStyle control
+      - you have modified LeftMargin, RightMargin, MaxTextWidth or MinTextWidth properties
+      - you have resized controls inserted in this TRichView control
+      Method is called automatically when TRichView control is resized. }
     procedure Format();
+    { Formats ONLY NEW items added after last calling of Format() or FormatTail() methods.
+      The first of these items should be added from new line. This method also scrolls to
+      the end of document. This method does not reformat whole document so it
+      works quickly. Like Format() method, FormatTail() does not perform repainting.
+      You should call Repaint() method of TRichView after it. }
     procedure FormatTail();
 
     procedure AppendFrom(Source: TCustomRichView);
     function GetLastCP(): Integer;
-    property VSmallStep: Integer read SmallStep write SetVSmallStep;
+
     function SaveHTML(const FileName, Title, ImagesPrefix: string; Options: TRVSaveOptions): Boolean;
     function SaveText(const FileName: string; LineWidth: Integer): Boolean;
 
+    { Removes section of document starting with checkpoint named CpName
+      till the next named checkpoint (if exists) or the end of document.
+      Before calling this method TRichView MUST be formatted.
+      This method does not perform any formatting. You should call Format() and Refresh()
+      methods after it. So this method needs reformatting of whole document and works rather slowly. }
     procedure DeleteSection(const ACheckPointName: string);
+    { Removes Count lines starting with FirstLine (from 0).
+      Before calling this method TRichView may be formatted or not. In both cases method runs
+      correctly. This method does not perform any formatting. You should call Format() and Refresh()
+      methods after it. So this method needs reformatting of whole document and works rather slowly. }
     procedure DeleteLines(FirstLine, Count: Integer);
 
     //use this only inside OnSaveComponentToFile event handler:
     function SavePicture(DocumentSaveFormat: TRVSaveFormat; const Path: string; gr: TGraphic): string; virtual;
 
-    procedure CopyText;
-    function GetSelText: String;
-    function SelectionExists: Boolean;
-    procedure Deselect;
-    procedure SelectAll;
+    { Copies selection to clipboard as text. If nothing is selected, does nothing. }
+    procedure CopyText();
+    { Returns selected text as string. You have no needs to
+      use this function because you can copy selected text to clipboard by CopyText(). }
+    function GetSelText(): String;
+    { True if some contents of component selected }
+    function SelectionExists(): Boolean;
+    { Clears selection. Does not repaint, so you should call Refresh() after it. }
+    procedure Deselect();
+    { Selects all contents of component. Does not repaint, so you should call Refresh() after it. }
+    procedure SelectAll();
 
+    { Number of pixels in 1 MSU. Important: if you change it when TRichView
+      component is already displayed, you must call Format and Refresh methods after. }
+    property VSmallStep: Integer read SmallStep write SetVSmallStep;
     property LineCount: Integer read GetLineCount;
     property FirstLineVisible: Integer read GetFirstLineVisible;
     property LastLineVisible: Integer read GetLastLineVisible;
@@ -514,8 +593,6 @@ begin
 end;
 {-------------------------------------}
 procedure TCustomRichView.ClearTemporal();
-var
-  i: Integer;
 begin
   if Assigned(ScrollTimer) then
   begin
@@ -1818,9 +1895,10 @@ begin
       OnJump(Self, JumpInfo.id + FirstJumpNo);
       Break;
     end;
-    LastJumpDowned := -1;
-    inherited MouseUp(Button, Shift, X, Y);
   end;
+
+  LastJumpDowned := -1;
+  inherited MouseUp(Button, Shift, X, Y);
 end;
 {-------------------------------------}
 procedure TCustomRichView.MouseDown(Button: TMouseButton; Shift: TShiftState; X, Y: Integer);

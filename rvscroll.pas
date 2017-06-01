@@ -49,15 +49,30 @@ type
     property TabOrder;
     property Align;
     property HelpContext;
+    { Determines whether the control will scroll when the scroll bar thumb tab
+      is being dragged or will wait for the tab to be dropped. Default value = True. }
     property Tracking: Boolean read FTracking write FTracking;
+    { Hides or shows vertical scrollbar.
+      If False then vertical scrollbar never appears.
+      If True then vertical scrollbar appears when it needed.
+      Horizontal scrollbar appears only if you insert pictures or components wider
+      than width of TRichView component, or if you set large MinTextWidth property. }
     property VScrollVisible: Boolean read FVScrollVisible write SetVScrollVisible;
     property OnVScrolled: TNotifyEvent read FOnVScrolled write FOnVScrolled;
   public
     { Public declarations }
     constructor Create(AOwner: TComponent); override;
     procedure EraseBackground(DC: HDC); override;
+    { Scrolls TRichView control to vertical coordinate = y pixels from the top of scrolled area.
+      So RichView1.ScrollTo(0) scrolls to the top of document.
+      You can use this method with methods GetCheckPointY and GetJumpPointY.
+      Note: method ScrollTo does not scroll exactly to specified coordinate,
+      but can scroll slightly highter }
     procedure ScrollTo(y: Integer);
+    { Vertical scrolling position, from 0 to VScrollMax inclusively.
+      Measured in 'my scrolling units' (MSU). By default 1 MSU = 10 pixels. }
     property VScrollPos: Integer read GetVScrollPos write SetVScrollPos;
+    { Maximum value of VScrollPos property }
     property VScrollMax: Integer read GetVScrollMax;
   end;
 
