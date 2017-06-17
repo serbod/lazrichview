@@ -1,6 +1,8 @@
 unit PtblRV;
 
-{$mode Delphi}
+{$IFDEF FPC}
+  {$mode Delphi}
+{$ENDIF}
 
 interface
 

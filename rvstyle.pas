@@ -1,6 +1,8 @@
 unit RVStyle;
 
-{$mode Delphi}
+{$IFDEF FPC}
+  {$mode Delphi}
+{$ENDIF}
 
 interface
 {.$R RVStyle}

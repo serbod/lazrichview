@@ -1,6 +1,8 @@
 unit RichView;
 
-{$mode Delphi}
+{$IFDEF FPC}
+  {$mode Delphi}
+{$ENDIF}
 
 interface
 {$I RV_Defs.inc}
@@ -432,9 +434,10 @@ type
 procedure InfoAboutSaD(var sad: TScreenAndDevice; Canvas: TCanvas);
 
 implementation
-{$IFDEF FPC}
+
 uses Printers;
 
+{$IFDEF FPC}
 {-------------------------------------}
 procedure InfoAboutSaD(var sad: TScreenAndDevice; Canvas: TCanvas);
 var
@@ -455,6 +458,20 @@ begin
   sad.ppiyScreen := GetDeviceCaps(screenDC, LOGPIXELSY);
   DeleteDC(screenDC);
 end;
+{$ELSE}
+{-------------------------------------}
+procedure InfoAboutSaD(var sad: TScreenAndDevice; Canvas: TCanvas);
+var
+  screenDC: HDC;
+begin
+  sad.ppixDevice := GetDeviceCaps(Canvas.Handle, LOGPIXELSX);
+  sad.ppiyDevice := GetDeviceCaps(Canvas.Handle, LOGPIXELSY);
+  screenDc := CreateCompatibleDC(0);
+  sad.ppixScreen := GetDeviceCaps(screenDC, LOGPIXELSX);
+  sad.ppiyScreen := GetDeviceCaps(screenDC, LOGPIXELSY);
+  DeleteDC(screenDC);
+end;
+{$ENDIF}
 
 { TJumpInfoList }
 
@@ -508,21 +525,10 @@ begin
   inherited Delete(Index);
 end;
 
-{$ELSE}
-{-------------------------------------}
-procedure InfoAboutSaD(var sad: TScreenAndDevice; Canvas: TCanvas);
-var
-  screenDC: HDC;
-begin
-  sad.ppixDevice := GetDeviceCaps(Canvas.Handle, LOGPIXELSX);
-  sad.ppiyDevice := GetDeviceCaps(Canvas.Handle, LOGPIXELSY);
-  screenDc := CreateCompatibleDC(0);
-  sad.ppixScreen := GetDeviceCaps(screenDC, LOGPIXELSX);
-  sad.ppiyScreen := GetDeviceCaps(screenDC, LOGPIXELSY);
-  DeleteDC(screenDC);
-end;
-{$ENDIF}
 {==================================================================}
+
+{ TCustomRichView }
+
 constructor TCustomRichView.Create(AOwner: TComponent);
 begin
   inherited Create(AOwner);
