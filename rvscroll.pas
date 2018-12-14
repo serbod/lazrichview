@@ -62,7 +62,7 @@ type
   public
     { Public declarations }
     constructor Create(AOwner: TComponent); override;
-    procedure EraseBackground(DC: HDC); override;
+    {$ifdef FPC}procedure EraseBackground(DC: HDC); override;{$endif}
     { Scrolls TRichView control to vertical coordinate = y pixels from the top of scrolled area.
       So RichView1.ScrollTo(0) scrolls to the top of document.
       You can use this method with methods GetCheckPointY and GetJumpPointY.
@@ -102,11 +102,12 @@ begin
  FVScrollVisible := False;
 end;
 
+{$ifdef FPC}
 procedure TRVScroller.EraseBackground(DC: HDC);
 begin
 
 end;
-
+{$endif}
 {------------------------------------------------------}
 procedure TRVScroller.CreateParams(var Params: TCreateParams);
 begin

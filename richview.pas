@@ -53,9 +53,10 @@ type
   { TDrawLineInfoList }
 
   TDrawLineInfoList = class(TList)
+  protected
+    procedure Notify(Ptr: Pointer; Action: TListNotification); override;
   public
     function GetItem(Index: Integer): TDrawLineInfo;
-    procedure Delete(Index: Integer);
     property Items[Index: Integer]: TDrawLineInfo read GetItem; default;
   end;
   {------------------------------------------------------------------}
@@ -66,6 +67,7 @@ type
     Center: Boolean;
     imgNo: Integer; { for rvsJump# used as jump id }
     gr: TPersistent;
+    Shared: Boolean;
     DataPtr: Pointer;
     Text: string;
   end;
@@ -73,9 +75,10 @@ type
   { TLineInfoList }
 
   TLineInfoList = class(TList)
+  protected
+    procedure Notify(Ptr: Pointer; Action: TListNotification); override;
   public
     function GetItem(Index: Integer): TLineInfo;
-    procedure Delete(Index: Integer);
     property Items[Index: Integer]: TLineInfo read GetItem; default;
   end;
 
@@ -90,9 +93,10 @@ type
   { TCPInfoList }
 
   TCPInfoList = class(TList)
+  protected
+    procedure Notify(Ptr: Pointer; Action: TListNotification); override;
   public
     function GetItem(Index: Integer): TCPInfo;
-    procedure Delete(Index: Integer);
     property Items[Index: Integer]: TCPInfo read GetItem; default;
   end;
   {------------------------------------------------------------------}
@@ -106,9 +110,10 @@ type
   { TJumpInfoList }
 
   TJumpInfoList = class(TList)
+  protected
+    procedure Notify(Ptr: Pointer; Action: TListNotification); override;
   public
     function GetItem(Index: Integer): TJumpInfo;
-    procedure Delete(Index: Integer);
     property Items[Index: Integer]: TJumpInfo read GetItem; default;
   end;
   {------------------------------------------------------------------}
@@ -322,7 +327,7 @@ type
       argument, only makes pointer to it. Memory is released when you call method Clear()
       or when control is destroyed. Do not destroy this picture yourself!
       TRichView control provides flicker-free scrolling of pictures. }
-    procedure AddPicture(gr: TGraphic);
+    procedure AddPicture(gr: TGraphic; AShared: Boolean = False);
     { Adds image-hypertext link. Parameters are the same as in the method AddBullet. }
     procedure AddHotSpot(imgNo: Integer; lst: TImageList; FromNewLine: Boolean);
     { Adds picture imgNo from ImageList at the new line or not. }
@@ -332,7 +337,7 @@ type
       not by RichView. It works the same way as if it was inserted in any other Delphi control.
       WARNING - These componets will be destroyed when you call method Clear()
       or when TRichView control is destroyed. Do not destroy them yourself! }
-    procedure AddControl(ctrl: TControl; center: Boolean); reintroduce;
+    procedure AddControl(ctrl: TControl; center: Boolean; AShared: Boolean = False); reintroduce;
 
     function GetMaxPictureWidth(): Integer;
     { Deletes all text, graphic and other objects from TRichView control }
@@ -480,10 +485,11 @@ begin
   Result := TJumpInfo(Get(Index));
 end;
 
-procedure TJumpInfoList.Delete(Index: Integer);
+procedure TJumpInfoList.Notify(Ptr: Pointer; Action: TListNotification);
 begin
-  Items[Index].Free();
-  inherited Delete(Index);
+  inherited;
+  if Action = lnDeleted then
+    TJumpInfo(Ptr).Free();
 end;
 
 { TCPInfoList }
@@ -493,10 +499,11 @@ begin
   Result := TCPInfo(Get(Index));
 end;
 
-procedure TCPInfoList.Delete(Index: Integer);
+procedure TCPInfoList.Notify(Ptr: Pointer; Action: TListNotification);
 begin
-  Items[Index].Free();
-  inherited Delete(Index);
+  inherited;
+  if Action = lnDeleted then
+    TCPInfo(Ptr).Free();
 end;
 
 { TDrawLineInfoList }
@@ -506,10 +513,12 @@ begin
   Result := TDrawLineInfo(Get(Index));
 end;
 
-procedure TDrawLineInfoList.Delete(Index: Integer);
+procedure TDrawLineInfoList.Notify(Ptr: Pointer;
+  Action: TListNotification);
 begin
-  Items[Index].Free();
-  inherited Delete(Index);
+  inherited;
+  if Action = lnDeleted then
+    TDrawLineInfo(Ptr).Free();
 end;
 
 { TLineInfoList }
@@ -519,10 +528,11 @@ begin
   Result := TLineInfo(Get(Index));
 end;
 
-procedure TLineInfoList.Delete(Index: Integer);
+procedure TLineInfoList.Notify(Ptr: Pointer; Action: TListNotification);
 begin
-  Items[Index].Free();
-  inherited Delete(Index);
+  inherited;
+  if Action = lnDeleted then
+    TLineInfo(Ptr).Free();
 end;
 
 {==================================================================}
@@ -647,13 +657,15 @@ begin
       LineInfo := Lines[i];
       if LineInfo.StyleNo = rvsPicture then { image}
       begin
-        LineInfo.gr.Free;
+        if not LineInfo.Shared then
+          LineInfo.gr.Free();
         LineInfo.gr := nil;
       end;
       if LineInfo.StyleNo = rvsComponent then {control}
       begin
         RemoveControl(TControl(LineInfo.gr));
-        LineInfo.gr.Free();
+        if not LineInfo.Shared then
+          LineInfo.gr.Free();
         LineInfo.gr := nil;
       end;
       //LineInfo.Free();
@@ -804,7 +816,7 @@ begin
   end;
 end;
 {-------------------------------------}
-procedure TCustomRichView.AddPicture(gr: TGraphic); { gr not copied, do not free it!}
+procedure TCustomRichView.AddPicture(gr: TGraphic; AShared: Boolean); { gr not copied, do not free it!}
 var
   LineInfo: TLineInfo;
 begin
@@ -814,6 +826,7 @@ begin
   LineInfo.SameAsPrev := False;
   LineInfo.Center := True;
   LineInfo.Text := '';
+  LineInfo.Shared := AShared;
   Lines.Add(LineInfo);
 end;
 {-------------------------------------}
@@ -845,7 +858,8 @@ begin
   Lines.Add(LineInfo);
 end;
 {-------------------------------------}
-procedure TCustomRichView.AddControl(ctrl: TControl; center: Boolean); { do not free ctrl! }
+procedure TCustomRichView.AddControl(ctrl: TControl; center: Boolean;
+  AShared: Boolean); { do not free ctrl! }
 var
   LineInfo: TLineInfo;
 begin
@@ -855,6 +869,7 @@ begin
   LineInfo.SameAsPrev := False;
   LineInfo.Center := center;
   LineInfo.Text := '';
+  LineInfo.Shared := AShared;
   Lines.Add(LineInfo);
   InsertControl(ctrl);
 end;
@@ -1037,6 +1052,7 @@ var sourceStrPtr, strForAdd, strSpacePos: PChar;
     width, y5, Offs : Integer;
 begin
   width := TextWidth;
+  y := 0;
   LineInfo := Lines[no];
   case LineInfo.StyleNo of
     rvsComponent: { Control }
@@ -2495,14 +2511,16 @@ begin
     LineInfo := Lines[i];
     if LineInfo.StyleNo = rvsPicture then { image}
     begin
-      LineInfo.gr.Free;
+      if not LineInfo.Shared then
+        LineInfo.gr.Free();
       LineInfo.gr := nil;
     end;
 
     if LineInfo.StyleNo = rvsComponent then {control}
     begin
       RemoveControl(TControl(LineInfo.gr));
-      LineInfo.gr.Free;
+      if not LineInfo.Shared then
+        LineInfo.gr.Free();
       LineInfo.gr := nil;
     end;
 
