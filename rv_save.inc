@@ -173,7 +173,8 @@ function TCustomRichView.SaveHTML(const FileName, Title, ImagesPrefix: string;
 var
   f: TextFile;
   i, j: Integer;
-  li: TLineInfo;
+  Item: TRVItem;
+  VisItem, VisItem2: TRVVisualItem;
   needbr: Boolean;
   s: string;
   cpno, jumpno: Integer;
@@ -208,10 +209,10 @@ begin
       Writeln(f, '      leftmargin=' + IntToStr(LeftMargin) + '>');
       WriteLn(f, OpenFontTag(Style.TextStyles[rvsNormal], Style.TextStyles[rvsNormal].Style, False));
       needbr := False;
-      for i := 0 to Lines.Count-1 do
+      for i := 0 to Items.Count-1 do
       begin
-        li := TLineInfo(lines[i]);
-        case li.StyleNo of
+        Item := Items[i];
+        case Item.StyleNo of
           rvsBreak:
           begin
             Writeln(f, '<HR noshade size=1>');
@@ -222,7 +223,7 @@ begin
           if Assigned(FOnSaveComponentToFile) then
           begin
             s := '';
-            FOnSaveComponentToFile(Self, ExtractFilePath(FileName), li.gr, rvsfHTML, s);
+            FOnSaveComponentToFile(Self, ExtractFilePath(FileName), (Item as TRVVisualItem).gr, rvsfHTML, s);
             if s <> '' then
             begin
               Writeln(f, s);
@@ -239,25 +240,27 @@ begin
 
           rvsPicture:
           begin
-            if (not li.Center) and (not li.SameAsPrev) then
+            if (Item.Alignment <> taCenter) and (not Item.SameAsPrev) then
               WriteLn(f,'<BR>');
-            if li.Center then
+            if Item.Alignment = taCenter then
               Write(f,'<CENTER>');
-            Write(f, '<IMG src="' + SavePicture(rvsfHTML, ExtractFilePath(FileName), TGraphic(li.gr)) + '">');
-            if li.Center then
+            Write(f, '<IMG src="' + SavePicture(rvsfHTML, ExtractFilePath(FileName), TGraphic((Item as TRVVisualItem).gr)) + '">');
+            if Item.Alignment = taCenter then
               Write(f,'</CENTER>');
             needbr := True;
           end;
 
           rvsBullet, rvsHotSpot:
           begin
-            if (not li.SameAsPrev) and needbr then
+            VisItem := (Item as TRVVisualItem);
+            if (not Item.SameAsPrev) and needbr then
               WriteLn(f,'<BR>');
             fn := '';
             for j := 0 to Bullets.Count-1 do
             begin
-              if (li.gr = Lines[TRVInteger2(Bullets.Objects[j]).val].gr)
-              and (li.imgNo = Lines[TRVInteger2(Bullets.Objects[j]).val].imgNo) then
+              VisItem2 := (Items[TRVInteger2(Bullets.Objects[j]).val] as TRVVisualItem);
+              if (VisItem.gr = VisItem2.gr)
+              and (VisItem.imgNo = VisItem2.imgNo) then
               begin
                 fn := Bullets[j];
               end;
@@ -267,12 +270,12 @@ begin
             begin
               bmp := TBitmap.Create();
               try
-                bmp.Width := TImageList(li.gr).Width;
-                bmp.Height := TImageList(li.gr).Height;
+                bmp.Width := TImageList(VisItem.gr).Width;
+                bmp.Height := TImageList(VisItem.gr).Height;
                 bmp.Canvas.Brush.Color := Style.Color;
                 bmp.Canvas.Pen.Color := Style.Color;
                 bmp.Canvas.FillRect(Rect(0, 0, Width, Height));
-                TImageList(li.gr).Draw(bmp.Canvas, 0, 0, li.imgNo);
+                TImageList(VisItem.gr).Draw(bmp.Canvas, 0, 0, VisItem.imgNo);
                 fn := SavePicture(rvsfHTML, ExtractFilePath(FileName), bmp);
                 rvi     := TRVInteger2.Create();
                 rvi.Val := i;
@@ -282,7 +285,7 @@ begin
               end;
             end;
             s := '';
-            if li.StyleNo = rvsHotSpot then
+            if Item.StyleNo = rvsHotSpot then
             begin
               if Assigned(FOnURLNeeded) then
                 FOnURLNeeded(Self, jumpno, s);
@@ -299,9 +302,9 @@ begin
 
           rvsJump1, rvsJump2:
           begin
-            if (not li.Center) and (not li.SameAsPrev) and needbr then
+            if (Item.Alignment <> taCenter) and (not Item.SameAsPrev) and needbr then
               WriteLn(f,'<BR>');
-            if li.Center then
+            if (Item.Alignment = taCenter) then
               Write(f,'<CENTER>');
             s := '';
             if Assigned(FOnURLNeeded) then
@@ -310,34 +313,35 @@ begin
             Inc(jumpno);
             if s <> '' then
               Write(f, '<A href=' + s + '>');
-            Write(f, OpenFontTag(Style.TextStyles[li.StyleNo], Style.TextStyles[rvsNormal].Style, True)
-                   + MakeHTMLStr(li.Text) + CloseFontTag(Style.TextStyles[li.StyleNo], Style.TextStyles[rvsNormal].Style, True));
+            Write(f, OpenFontTag(Style.TextStyles[Item.StyleNo], Style.TextStyles[rvsNormal].Style, True)
+                   + MakeHTMLStr(Item.Text) + CloseFontTag(Style.TextStyles[Item.StyleNo], Style.TextStyles[rvsNormal].Style, True));
             if s <> '' then
               Write(f, '</A>');
-            needbr := not li.Center;
+            needbr := (Item.Alignment <> taCenter);
           end;
 
           rvsNormal:
           begin
-            if (not li.Center) and (not li.SameAsPrev) and needbr then
+            if (Item.Alignment <> taCenter) and (not Item.SameAsPrev) and needbr then
               WriteLn(f, '<BR>');
-            if li.Center then
-              Write(f, '<CENTER>' + MakeHTMLStr(li.Text) + '</CENTER>')
+            if (Item.Alignment = taCenter) then
+              Write(f, '<CENTER>' + MakeHTMLStr(Item.Text) + '</CENTER>')
             else
-              Write(f, MakeHTMLStr(li.Text));
-            needbr := not li.Center;
+              Write(f, MakeHTMLStr(Item.Text));
+            needbr := (Item.Alignment <> taCenter);
           end;
 
         else
           begin
-            if (not li.Center) and (not li.SameAsPrev) and needbr then
+            if (Item.Alignment <> taCenter) and (not Item.SameAsPrev) and needbr then
               WriteLn(f, '<BR>');
-            if li.Center then Write(f, '<CENTER>');
-            Write(f, OpenFontTag(Style.TextStyles[li.StyleNo], Style.TextStyles[rvsNormal].Style, True)
-                   + MakeHTMLStr(li.Text) + CloseFontTag(Style.TextStyles[li.StyleNo], Style.TextStyles[rvsNormal].Style, True));
-            if li.Center then
+            if (Item.Alignment = taCenter) then
+              Write(f, '<CENTER>');
+            Write(f, OpenFontTag(Style.TextStyles[Item.StyleNo], Style.TextStyles[rvsNormal].Style, True)
+              + MakeHTMLStr(Item.Text) + CloseFontTag(Style.TextStyles[Item.StyleNo], Style.TextStyles[rvsNormal].Style, True));
+            if (Item.Alignment = taCenter) then
               Write(f, '</CENTER>');
-            needbr := not li.Center;
+            needbr := (Item.Alignment <> taCenter);
           end;
         end;
       end;
@@ -362,7 +366,7 @@ function TCustomRichView.SaveText(const FileName: string; LineWidth: Integer): B
 var
   f: TextFile;
   i, j: Integer;
-  li: TLineInfo;
+  Item: TRVItem;
   s, s2: string;
 begin
   {$I+}
@@ -375,10 +379,10 @@ begin
     AssignFile(f, FileName);
     Rewrite(f);
     try
-      for i:=0 to Lines.Count-1 do
+      for i:=0 to Items.Count-1 do
       begin
-        li := Lines[i];
-        case li.StyleNo of
+        Item := Items[i];
+        case Item.StyleNo of
           rvsBreak:
           begin
             Writeln(f);
@@ -389,33 +393,33 @@ begin
 
           rvsComponent:
           begin
-            if (not li.SameAsPrev) then
+            if (not Item.SameAsPrev) then
               WriteLn(f);
             if Assigned(FOnSaveComponentToFile) then
             begin
               s2 := '';
-              FOnSaveComponentToFile(Self,ExtractFilePath(FileName), li.gr, rvsfText, s2);
+              FOnSaveComponentToFile(Self, ExtractFilePath(FileName), (Item as TRVVisualItem).gr, rvsfText, s2);
               if s2 <> '' then
                 Write(f, s2);
             end;
           end;
 
           rvsPicture, rvsHotSpot, rvsBullet:
-          if (not li.SameAsPrev) then
+          if (not Item.SameAsPrev) then
             WriteLn(f);
           else
           begin
-            if (not li.SameAsPrev) then
+            if (not Item.SameAsPrev) then
               WriteLn(f);
-            if li.Center then
+            if (Item.Alignment = taCenter) then
             begin
               s2 := '';
-              for j := 1 to (LineWidth-Length(li.Text)) div 2 do
+              for j := 1 to (LineWidth-Length(Item.Text)) div 2 do
                 s2 := s2 + ' ';
-              Write(f, s2 + li.Text)
+              Write(f, s2 + Item.Text)
             end
             else
-              Write(f, li.Text);
+              Write(f, Item.Text);
           end;
         end;
       end;

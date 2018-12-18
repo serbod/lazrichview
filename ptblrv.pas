@@ -13,7 +13,7 @@ uses
   Windows, Messages,
   {$ENDIF}
   SysUtils, Classes, Graphics, Controls, Forms, Dialogs,
-  RVScroll, RichView, Printers{, CommDlg};
+  RVItems, RVScroll, RichView, Printers{, CommDlg};
 
 {$I RV_Defs.inc}
 
@@ -274,7 +274,7 @@ end;
 function TPrintableRV.FormatPages(): Integer;
 var
   i, j: Integer;
-  dli, dli2, dli3: TDrawLineInfo;
+  Item, Item2, Item3: TRVItem;
   nextnewline: Integer;
   rvpi: TRVPageInfo;
   nPages: Integer;
@@ -334,7 +334,7 @@ begin
 
   PagesList.Clear();
   FormatPages := 0;
-  if DrawLines.Count = 0 then
+  if FVisibleItems.Count = 0 then
     Exit;
   nPages := 1;
   rvpi := TRVPageInfo(PagesList.Add());
@@ -343,17 +343,17 @@ begin
   StartY := 0;
   i := 0;
   if Assigned(FOnFormatting) then FOnFormatting(Self, 0, rvpsProceeding);
-  while i < DrawLines.Count do
+  while i < FVisibleItems.Count do
   begin
-    dli := DrawLines[i];
-    if dli.Top + dli.Height > StartY + Height then
+    Item := FVisibleItems[i];
+    if Item.Top + Item.Height > StartY + Height then
     begin { i-th item does not fit in page }
       nextnewline := i;
       { searching first item in first last in new page }
       for j:=i downto 0 do
       begin
-        dli2 := DrawLines[j];
-        if (j <> i) and (dli2.Top + dli2.Height <= dli.Top) then
+        Item2 := FVisibleItems[j];
+        if (j <> i) and (Item2.Top + Item2.Height <= Item.Top) then
           Break;
 
         nextnewline := j;
@@ -362,18 +362,18 @@ begin
       if nextnewline = TRVPageInfo(PagesList.Items[nPages-1]).StartLineNo then
         Inc(nextnewline);
 
-      if nextnewline <> DrawLines.Count then
+      if nextnewline <> FVisibleItems.Count then
       begin
         { searching min y of first line in new page }
-        dli2 := DrawLines[nextnewline];
-        StartY := dli2.Top;
-        for j := nextnewline + 1 to DrawLines.Count - 1 do
+        Item2 := FVisibleItems[nextnewline];
+        StartY := Item2.Top;
+        for j := nextnewline + 1 to FVisibleItems.Count - 1 do
         begin
-          dli3 := DrawLines[j];
-          if (dli3.Top >= dli2.Top + dli2.Height) then
+          Item3 := FVisibleItems[j];
+          if (Item3.Top >= Item2.Top + Item2.Height) then
             Break;
-          if dli3.Top < StartY then
-            StartY := dli3.Top;
+          if Item3.Top < StartY then
+            StartY := Item3.Top;
         end;
         rvpi := TRVPageInfo(PagesList.Add);
         rvpi.StartLineNo := nextnewline;
@@ -442,8 +442,8 @@ end;
 procedure TPrintableRV.DrawPage(pgNo: Integer; Canvas: TCanvas);
 var
   i, no: Integer;
-  dli: TDrawLineInfo;
-  li: TLineInfo;
+  Item: TRVItem;
+  VisItem: TRVVisualItem;
   zerocoord: Integer;
   first, last: Integer;
   sad: TScreenAndDevice;
@@ -466,7 +466,7 @@ begin
 
   first := TRVPageInfo(PagesList.Items[pgNo-1]).StartLineNo;
   if pgNo = PagesList.Count then
-    last := DrawLines.Count-1
+    last := FVisibleItems.Count-1
   else
     last := TRVPageInfo(PagesList.Items[pgNo]).StartLineNo-1;
 
@@ -510,9 +510,8 @@ begin
   try
     for i := first to last do
     begin
-      dli := drawlines[i];
-      li := Lines[dli.LineNo];
-      no := li.StyleNo;
+      Item := FVisibleItems[i];
+      no := Item.StyleNo;
       if no >= 0 then { text }
       begin
         FontInf := FStyle.TextStyles[no];
@@ -524,9 +523,9 @@ begin
         Canvas.Font.CharSet := FontInf.CharSet;
         {$ENDIF}
         Canvas.TextOut(
-          MulDiv(dli.Left + TmpLM, sad.ppixDevice, psad.ppixDevice),
-          MulDiv(dli.Top - zerocoord, sad.ppiyDevice, psad.ppiyDevice),
-          dli.Text);
+          MulDiv(Item.Left + TmpLM, sad.ppixDevice, psad.ppixDevice),
+          MulDiv(Item.Top - zerocoord, sad.ppiyDevice, psad.ppiyDevice),
+          Item.Text);
         Continue;
       end;
 
@@ -549,25 +548,26 @@ begin
           // end
           {else}
           begin
+            VisItem := (Item as TRVVisualItem);
             if no = rvsPicture then
             begin
-              tmpbmp.Width  := TGraphic(li.gr).Width;
-              tmpbmp.Height := TGraphic(li.gr).Height;
+              tmpbmp.Width  := TGraphic(VisItem.gr).Width;
+              tmpbmp.Height := TGraphic(VisItem.gr).Height;
             end
             else
             begin
-              tmpbmp.Width  := TImageList(li.gr).Width;
-              tmpbmp.Height := TImageList(li.gr).Height;
+              tmpbmp.Width  := TImageList(VisItem.gr).Width;
+              tmpbmp.Height := TImageList(VisItem.gr).Height;
             end;
             if background <> nil then
               tmpbmp.Canvas.CopyRect(
                  Rect(0, 0, tmpbmp.Width, tmpbmp.Height),
                  background.Canvas,
                  Rect(
-                     MulDiv(dli.Left, psad.ppixScreen, psad.ppixDevice),
-                     MulDiv(dli.Top - (zerocoord + TmpTM), psad.ppiyScreen, psad.ppiyDevice),
-                     MulDiv(dli.Left, psad.ppixScreen, psad.ppixDevice) + tmpbmp.Width,
-                     MulDiv(dli.Top - (zerocoord + TmpTM), psad.ppiyScreen, psad.ppiyDevice) + tmpbmp.Height
+                     MulDiv(Item.Left, psad.ppixScreen, psad.ppixDevice),
+                     MulDiv(Item.Top - (zerocoord + TmpTM), psad.ppiyScreen, psad.ppiyDevice),
+                     MulDiv(Item.Left, psad.ppixScreen, psad.ppixDevice) + tmpbmp.Width,
+                     MulDiv(Item.Top - (zerocoord + TmpTM), psad.ppiyScreen, psad.ppiyDevice) + tmpbmp.Height
                      )
                 )
             else
@@ -578,13 +578,13 @@ begin
             end;
 
             if no = rvsPicture then
-              tmpbmp.Canvas.Draw(0, 0, TGraphic(li.gr))
+              tmpbmp.Canvas.Draw(0, 0, TGraphic(VisItem.gr))
             else
-              TImageList(li.gr).Draw(tmpbmp.Canvas,0,0,li.imgNo);
+              TImageList(VisItem.gr).Draw(tmpbmp.Canvas, 0, 0, VisItem.imgNo);
 
             DrawOnDevice(Canvas,
-              MulDiv(dli.Left + TmpLM, sad.ppixDevice, psad.ppixDevice),
-              MulDiv(dli.Top - zerocoord, sad.ppiyDevice, psad.ppiyDevice),
+              MulDiv(Item.Left + TmpLM, sad.ppixDevice, psad.ppixDevice),
+              MulDiv(Item.Top - zerocoord, sad.ppiyDevice, psad.ppiyDevice),
               sad, tmpbmp);
           end;
         end;
@@ -593,14 +593,14 @@ begin
         begin
           Canvas.Pen.Color := FStyle.TextStyles[0].Color;
           Canvas.MoveTo(
-             MulDiv(dli.Left + TmpLM + MulDiv(5, psad.ppixDevice, psad.ppixScreen),
+             MulDiv(Item.Left + TmpLM + MulDiv(5, psad.ppixDevice, psad.ppixScreen),
                    sad.ppixDevice, psad.ppixDevice),
-             MulDiv(dli.Top - zerocoord + MulDiv(5, psad.ppiyDevice, psad.ppiyScreen),
+             MulDiv(Item.Top - zerocoord + MulDiv(5, psad.ppiyDevice, psad.ppiyScreen),
                    sad.ppiyDevice, psad.ppiyDevice));
           Canvas.LineTo(
              MulDiv(Width + TmpLM - MulDiv(5 + RightMargin, psad.ppixDevice, psad.ppixScreen),
                    sad.ppixDevice, psad.ppixDevice),
-             MulDiv(dli.Top - zerocoord + MulDiv(5, psad.ppiyDevice, psad.ppiyScreen),
+             MulDiv(Item.Top - zerocoord + MulDiv(5, psad.ppiyDevice, psad.ppiyScreen),
                    sad.ppiyDevice, psad.ppiyDevice));
         end;
 

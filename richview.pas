@@ -13,7 +13,7 @@ uses
   Windows, Messages,
   {$ENDIF}
   SysUtils, Classes, Graphics, Controls, Forms,
-  RVStyle, RVScroll, ClipBrd,
+  RVItems, RVStyle, RVScroll, ClipBrd,
   {$IFDEF RICHVIEWDEF4}
   ImgList,
   {$ENDIF}
@@ -38,84 +38,7 @@ type
   TRVSaveOption = (rvsoOverrideImages);
   TRVSaveOptions = set of TRVSaveOption;
   {------------------------------------------------------------------}
-  TDrawLineInfo = class
-  public
-    Left: Integer;
-    Top: Integer;
-    Width: Integer;
-    Height: Integer;
-    LineNo: Integer;
-    Offs: Integer;
-    FromNewLine: Boolean;
-    Text: string;
-  end;
 
-  { TDrawLineInfoList }
-
-  TDrawLineInfoList = class(TList)
-  protected
-    procedure Notify(Ptr: Pointer; Action: TListNotification); override;
-  public
-    function GetItem(Index: Integer): TDrawLineInfo;
-    property Items[Index: Integer]: TDrawLineInfo read GetItem; default;
-  end;
-  {------------------------------------------------------------------}
-  TLineInfo = class
-  public
-    StyleNo: Integer;
-    SameAsPrev: Boolean;
-    Center: Boolean;
-    imgNo: Integer; { for rvsJump# used as jump id }
-    gr: TPersistent;
-    Shared: Boolean;
-    DataPtr: Pointer;
-    Text: string;
-  end;
-
-  { TLineInfoList }
-
-  TLineInfoList = class(TList)
-  protected
-    procedure Notify(Ptr: Pointer; Action: TListNotification); override;
-  public
-    function GetItem(Index: Integer): TLineInfo;
-    property Items[Index: Integer]: TLineInfo read GetItem; default;
-  end;
-
-  {------------------------------------------------------------------}
-  TCPInfo = class
-  public
-    Y: Integer;
-    LineNo: Integer;
-    Text: string;
-  end;
-
-  { TCPInfoList }
-
-  TCPInfoList = class(TList)
-  protected
-    procedure Notify(Ptr: Pointer; Action: TListNotification); override;
-  public
-    function GetItem(Index: Integer): TCPInfo;
-    property Items[Index: Integer]: TCPInfo read GetItem; default;
-  end;
-  {------------------------------------------------------------------}
-  TJumpInfo = class
-  public
-    l,t,w,h: Integer;
-    id, idx: Integer;
-    Text: string;
-  end;
-
-  { TJumpInfoList }
-
-  TJumpInfoList = class(TList)
-  protected
-    procedure Notify(Ptr: Pointer; Action: TListNotification); override;
-  public
-    function GetItem(Index: Integer): TJumpInfo;
-    property Items[Index: Integer]: TJumpInfo read GetItem; default;
-  end;
   {------------------------------------------------------------------}
   TJumpEvent = procedure (Sender: TObject; id: Integer) of object;
   TRVMouseMoveEvent = procedure (Sender: TObject; id: Integer) of object;
@@ -180,20 +103,29 @@ type
     procedure InvalidateJumpRect(no: Integer);
     procedure WMSize(var Message: TWMSize); message WM_SIZE;
     procedure WMEraseBkgnd(var Message: TWMEraseBkgnd); message WM_ERASEBKGND;
-    function FindItemAtPos(X,Y: Integer): Integer;
-    procedure FindItemForSel(X,Y: Integer; var No, Offs: Integer);
+    { Return visual item index (-1 if cursor above limits and -2 if below limits) }
+    function FindVisItemAtPos(X, Y: Integer): Integer;
+    { ItemNo - original item index (-1 if cursor above limits and -2 if below limits)
+      TextOffs - text offset inside item }
+    procedure FindOrigItemForSel(X, Y: Integer; var ItemNo, TextOffs: Integer);
+    { ItemNo - visible item index
+      TextOffs - text offset inside item}
+    procedure FindVisItemForSel(X, Y: Integer; var ItemNo, TextOffs: Integer);
     function GetLineCount: Integer;
     procedure CMMouseLeave(var Message: TMessage); message CM_MOUSELEAVE;
-    procedure GetSelBounds(out StartNo, EndNo, StartOffs, EndOffs: Integer);
-    procedure StoreSelBounds(var StartNo, EndNo, StartOffs, EndOffs: Integer);
-    procedure RestoreSelBounds(StartNo, EndNo, StartOffs, EndOffs: Integer);
+    { StartNo, EndNo - visible item index
+      StartOffs, EndOffs - text offset inside item }
+    procedure GetVisibleSelBounds(out StartNo, EndNo, StartOffs, EndOffs: Integer);
+    procedure GetItemsSelBounds(var StartNo, EndNo, StartOffs, EndOffs: Integer);
+    procedure SetItemsSelBounds(StartNo, EndNo, StartOffs, EndOffs: Integer);
   protected
     { Protected declarations }
-    FLines: TLineInfoList;
-    Lines: TLineInfoList;
-    DrawLines: TDrawLineInfoList;
+    FItems: TRVItemList;
+    Items: TRVItemList;
+    FVisibleItems: TRVItemList;
+
     CheckPoints: TCPInfoList;
-    Jumps: TJumpInfoList;
+    FJumpList: TJumpInfoList;
     FStyle: TRVStyle;
     nJmps: Integer;
 
@@ -204,7 +136,9 @@ type
 
     LastJumpMovedAbove: Integer;
     LastLineFormatted: Integer;
-    LastJumpDowned, XClicked, YClicked, XMouse, YMouse: Integer;
+    LastJumpDowned: Integer;
+    XMouse, YMouse: Integer;
+    XClicked, YClicked: Integer;
 
     imgSavePrefix: String;
     imgSaveNo: Integer;
@@ -212,6 +146,9 @@ type
 
     ShareContents: Boolean;
     FClientTextWidth: Boolean;
+
+    { default text alignment - taLeftJustify, taRightJustify, taCenter }
+    FDefaultAlignment: TAlignment;
 
     procedure Notification(AComponent: TComponent; Operation: TOperation); override;
     procedure Click(); override;
@@ -222,13 +159,17 @@ type
     procedure KeyDown(var Key: Word; Shift: TShiftState); override;
     procedure FormatLine(no: Integer; var x, baseline, prevdesc, prevabove: Integer; Canvas: TCanvas;
                          var sad: TScreenAndDevice);
-    procedure AdjustJumpsCoords;
-    procedure AdjustChildrenCoords;
-    procedure ClearTemporal;
+    procedure AdjustJumpsCoords();
+    { set position for embedded controls }
+    procedure AdjustChildrenCoords();
+    procedure ClearTemporal();
     function GetFirstVisible(TopLine: Integer): Integer;
-    function GetFirstLineVisible: Integer;
-    function GetLastLineVisible: Integer;
-    function GetDrawLineNo(BoundLine: Integer; Option: Integer): Integer;
+    { get Items[] index for FVisibleItem[] index }
+    function GetItemIdByVisibleId(AVisibleId: Integer): Integer;
+    function GetFirstLineVisible(): Integer;
+    function GetLastLineVisible(): Integer;
+    { Option: gdlnFirstVisible, gdlnLastCompleteVisible, gdlnLastVisible }
+    function GetVisibleItemIndex(BoundLine: Integer; Option: Integer): Integer;
     procedure Format_(OnlyResized:Boolean; depth: Integer; Canvas: TCanvas; OnlyTail: Boolean);
     procedure SetBackBitmap(Value: TBitmap);
     // draw background
@@ -337,7 +278,7 @@ type
       not by RichView. It works the same way as if it was inserted in any other Delphi control.
       WARNING - These componets will be destroyed when you call method Clear()
       or when TRichView control is destroyed. Do not destroy them yourself! }
-    procedure AddControl(ctrl: TControl; center: Boolean; AShared: Boolean = False); reintroduce;
+    procedure AddControl(ACtrl: TControl; ACentered: Boolean; AShared: Boolean = False); reintroduce;
 
     function GetMaxPictureWidth(): Integer;
     { Deletes all text, graphic and other objects from TRichView control }
@@ -372,7 +313,7 @@ type
       Before calling this method TRichView may be formatted or not. In both cases method runs
       correctly. This method does not perform any formatting. You should call Format() and Refresh()
       methods after it. So this method needs reformatting of whole document and works rather slowly. }
-    procedure DeleteLines(FirstLine, Count: Integer);
+    procedure DeleteItems(AFirstIndex, ACount: Integer);
 
     //use this only inside OnSaveComponentToFile event handler:
     function SavePicture(DocumentSaveFormat: TRVSaveFormat; const Path: string; gr: TGraphic): string; virtual;
@@ -389,12 +330,14 @@ type
     { Selects all contents of component. Does not repaint, so you should call Refresh() after it. }
     procedure SelectAll();
 
+    function GetDebugInfo(): string;
+
     { Number of pixels in 1 MSU. Important: if you change it when TRichView
       component is already displayed, you must call Format and Refresh methods after. }
     property VSmallStep: Integer read SmallStep write SetVSmallStep;
     property LineCount: Integer read GetLineCount;
-    property FirstLineVisible: Integer read GetFirstLineVisible;
-    property LastLineVisible: Integer read GetLastLineVisible;
+    //property FirstLineVisible: Integer read GetFirstLineVisible;
+    //property LastLineVisible: Integer read GetLastLineVisible;
   end;
   
   TRichView = class(TCustomRichView)
@@ -442,8 +385,12 @@ implementation
 
 uses Printers;
 
+const
+  gdlnFirstVisible = 1;
+  gdlnLastCompleteVisible = 2;
+  gdlnLastVisible = 3;
+
 {$IFDEF FPC}
-{-------------------------------------}
 procedure InfoAboutSaD(var sad: TScreenAndDevice; Canvas: TCanvas);
 var
   screenDC: HDC;
@@ -464,7 +411,7 @@ begin
   DeleteDC(screenDC);
 end;
 {$ELSE}
-{-------------------------------------}
+
 procedure InfoAboutSaD(var sad: TScreenAndDevice; Canvas: TCanvas);
 var
   screenDC: HDC;
@@ -477,63 +424,6 @@ begin
   DeleteDC(screenDC);
 end;
 {$ENDIF}
-
-{ TJumpInfoList }
-
-function TJumpInfoList.GetItem(Index: Integer): TJumpInfo;
-begin
-  Result := TJumpInfo(Get(Index));
-end;
-
-procedure TJumpInfoList.Notify(Ptr: Pointer; Action: TListNotification);
-begin
-  inherited;
-  if Action = lnDeleted then
-    TJumpInfo(Ptr).Free();
-end;
-
-{ TCPInfoList }
-
-function TCPInfoList.GetItem(Index: Integer): TCPInfo;
-begin
-  Result := TCPInfo(Get(Index));
-end;
-
-procedure TCPInfoList.Notify(Ptr: Pointer; Action: TListNotification);
-begin
-  inherited;
-  if Action = lnDeleted then
-    TCPInfo(Ptr).Free();
-end;
-
-{ TDrawLineInfoList }
-
-function TDrawLineInfoList.GetItem(Index: Integer): TDrawLineInfo;
-begin
-  Result := TDrawLineInfo(Get(Index));
-end;
-
-procedure TDrawLineInfoList.Notify(Ptr: Pointer;
-  Action: TListNotification);
-begin
-  inherited;
-  if Action = lnDeleted then
-    TDrawLineInfo(Ptr).Free();
-end;
-
-{ TLineInfoList }
-
-function TLineInfoList.GetItem(Index: Integer): TLineInfo;
-begin
-  Result := TLineInfo(Get(Index));
-end;
-
-procedure TLineInfoList.Notify(Ptr: Pointer; Action: TListNotification);
-begin
-  inherited;
-  if Action = lnDeleted then
-    TLineInfo(Ptr).Free();
-end;
 
 {==================================================================}
 
@@ -552,11 +442,12 @@ begin
   LastJumpMovedAbove := -1; 
   FStyle         := nil;
   LastJumpDowned := -1;
-  FLines         := TLineInfoList.Create();
-  Lines          := FLines;
-  DrawLines      := TDrawLineInfoList.Create();
+  FItems         := TRVItemList.Create();
+  Items          := FItems;
+  FVisibleItems  := TRVItemList.Create();
+  FVisibleItems.OwnSubitems := True;
   CheckPoints    := TCPInfoList.Create();
-  Jumps          := TJumpInfoList.Create();
+  FJumpList      := TJumpInfoList.Create();
   FBackBitmap    := TBitmap.Create();
   FBackGroundStyle := bsNoBitmap;
   nJmps          := 0;
@@ -578,36 +469,37 @@ begin
   FAllowSelection:= True;
   LastLineFormatted := -1;
   ScrollTimer    := nil;
+  FDefaultAlignment := taLeftJustify;
   //Format_(False,0, Canvas, False);
 end;
-{-------------------------------------}
+
 destructor TCustomRichView.Destroy;
 begin
   FreeAndNil(FBackBitmap);
   Clear();
-  FreeAndNil(DrawLines);
   FreeAndNil(CheckPoints);
-  FreeAndNil(jumps);
-  FreeAndNil(FLines);
+  FreeAndNil(FJumpList);
+  FreeAndNil(FItems);
+  FreeAndNil(FVisibleItems);
   inherited Destroy;
 end;
-{-------------------------------------}
+
 procedure TCustomRichView.WMSize(var Message: TWMSize);
 begin
   Format_(True, 0, Canvas, False);
   if Assigned(FOnResized) then FOnResized(Self);
 end;
-{-------------------------------------}
+
 procedure TCustomRichView.Format;
 begin
   Format_(False, 0, Canvas, False);
 end;
-{-------------------------------------}
+
 procedure TCustomRichView.FormatTail;
 begin
   Format_(False, 0, Canvas, True);
 end;
-{-------------------------------------}
+
 procedure TCustomRichView.ClearTemporal();
 begin
   if Assigned(ScrollTimer) then
@@ -615,14 +507,14 @@ begin
     FreeAndNil(ScrollTimer);
   end;
 
-  DrawLines.Clear();
+  FVisibleItems.Clear();
 
   CheckPoints.Clear();
 
-  Jumps.Clear();
+  FJumpList.Clear();
   nJmps :=0;
 end;
-{-------------------------------------}
+
 procedure TCustomRichView.Deselect();
 begin
   Selection := False;
@@ -632,74 +524,77 @@ begin
   FSelEndOffs := 0;
   if Assigned(FOnSelect) then OnSelect(Self);  
 end;
-{-------------------------------------}
+
 procedure TCustomRichView.SelectAll();
 begin
   FSelStartNo := 0;
-  FSelEndNo := DrawLines.Count-1;
+  FSelEndNo := FVisibleItems.Count-1;
   FSelStartOffs := 0;
   FSelEndOffs := 0;
-  if Lines[DrawLines[FSelEndNo].LineNo].StyleNo >= 0 then
-    FSelEndOffs := Length(DrawLines[FSelEndNo].Text) + 1;
+  if FVisibleItems[FSelEndNo].StyleNo >= 0 then
+    FSelEndOffs := Length(FVisibleItems[FSelEndNo].Text) + 1;
   if Assigned(FOnSelect) then OnSelect(Self);
 end;
-{-------------------------------------}
+
 procedure TCustomRichView.Clear();
 var
   i: Integer;
-  LineInfo: TLineInfo;
+  Item: TRVItem;
+  VisItem: TRVVisualItem;
 begin
   Deselect();
   if not ShareContents then
   begin
-    for i:=0 to Lines.Count-1 do
+    for i:=0 to Items.Count-1 do
     begin
-      LineInfo := Lines[i];
-      if LineInfo.StyleNo = rvsPicture then { image}
+      Item := Items[i];
+      if (Item is TRVVisualItem) then
       begin
-        if not LineInfo.Shared then
-          LineInfo.gr.Free();
-        LineInfo.gr := nil;
+        VisItem := (Item as TRVVisualItem);
+        if VisItem.StyleNo = rvsPicture then { image}
+        begin
+          if not VisItem.Shared then
+            VisItem.gr.Free();
+          VisItem.gr := nil;
+        end;
+        if VisItem.StyleNo = rvsComponent then {control}
+        begin
+          RemoveControl(TControl(VisItem.gr));
+          if not VisItem.Shared then
+            VisItem.gr.Free();
+          VisItem.gr := nil;
+        end;
       end;
-      if LineInfo.StyleNo = rvsComponent then {control}
-      begin
-        RemoveControl(TControl(LineInfo.gr));
-        if not LineInfo.Shared then
-          LineInfo.gr.Free();
-        LineInfo.gr := nil;
-      end;
-      //LineInfo.Free();
-      //Lines.Objects[i] := nil;
     end;
-    Lines.Clear();
+    Items.Clear();
   end;
   ClearTemporal();
 end;
-{-------------------------------------}
+
 procedure TCustomRichView.AddFromNewLine(const s: string; StyleNo: Integer);
 var
-  LineInfo: TLineInfo;
+  Item: TRVItem;
 begin
-  LineInfo := TLineInfo.Create();
-  LineInfo.StyleNo := StyleNo;
-  LineInfo.SameAsPrev := False;
-  LineInfo.Center := False;
-  LineInfo.Text := s;
-  Lines.Add(LineInfo);
+  Item := TRVItem.Create();
+  Item.StyleNo := StyleNo;
+  Item.SameAsPrev := False;
+  Item.Alignment := FDefaultAlignment;
+  Item.Text := s;
+  Items.Add(Item);
 end;
-{-------------------------------------}
+
 procedure TCustomRichView.Add(const s: string; StyleNo: Integer);
 var
-  LineInfo: TLineInfo;
+  Item: TRVItem;
 begin
-  LineInfo := TLineInfo.Create();
-  LineInfo.StyleNo := StyleNo;
-  LineInfo.SameAsPrev := (Lines.Count <> 0);
-  LineInfo.Center := False;
-  LineInfo.Text := s;
-  Lines.Add(LineInfo);
+  Item := TRVItem.Create();
+  Item.StyleNo := StyleNo;
+  Item.SameAsPrev := (Items.Count <> 0);
+  Item.Alignment := FDefaultAlignment;
+  Item.Text := s;
+  Items.Add(Item);
 end;
-{-------------------------------------}
+
 procedure TCustomRichView.AddText(s: string; StyleNo: Integer);
 var
   p: Integer;
@@ -726,7 +621,7 @@ begin
     Delete(s, 1, p+1);
   end;
 end;
-{-------------------------------------}
+
 procedure TCustomRichView.AddTextFromNewLine(s: string; StyleNo: Integer);
 var
   p: Integer;
@@ -750,38 +645,38 @@ begin
    Delete(s, 1, p+1);
   end;
 end;
-{-------------------------------------}
+
 procedure TCustomRichView.AddCenterLine(const s: string; StyleNo: Integer);
 var
-  LineInfo: TLineInfo;
+  Item: TRVItem;
 begin
-  LineInfo := TLineInfo.Create();
-  LineInfo.StyleNo := StyleNo;
-  LineInfo.SameAsPrev := False;
-  LineInfo.Center := True;
-  LineInfo.Text := s;
-  Lines.Add(LineInfo);
+  Item := TRVItem.Create();
+  Item.StyleNo := StyleNo;
+  Item.SameAsPrev := False;
+  Item.Alignment := taCenter;
+  Item.Text := s;
+  Items.Add(Item);
 end;
-{-------------------------------------}
+
 procedure TCustomRichView.AddBreak();
 var
-  LineInfo: TLineInfo;
+  Item: TRVItem;
 begin
-  LineInfo := TLineInfo.Create();
-  LineInfo.StyleNo := rvsBreak;
-  LineInfo.Text := '';
-  Lines.Add(LineInfo);
+  Item := TRVItem.Create();
+  Item.StyleNo := rvsBreak;
+  Item.Text := '';
+  Items.Add(Item);
 end;
-{-------------------------------------}
+
 function TCustomRichView.AddNamedCheckPoint(const CpName: String): Integer;
 var
-  LineInfo: TLineInfo;
+  Item: TRVItem;
   CPInfo: TCPInfo;
 begin
-  LineInfo := TLineInfo.Create();
-  LineInfo.StyleNo := rvsCheckPoint;
-  LineInfo.Text := CpName;
-  Lines.Add(LineInfo);
+  Item := TRVItem.Create();
+  Item.StyleNo := rvsCheckPoint;
+  Item.Text := CpName;
+  Items.Add(Item);
 
   CPInfo := TCPInfo.Create();
   CPInfo.Y := 0;
@@ -789,121 +684,124 @@ begin
   CheckPoints.Add(CPInfo);
   AddNamedCheckPoint := CheckPoints.Count-1;
 end;
-{-------------------------------------}
+
 function TCustomRichView.AddCheckPoint(): Integer;
 begin
   AddCheckPoint := AddNamedCheckPoint('');
 end;
-{-------------------------------------}
+
 function TCustomRichView.GetCheckPointY(no: Integer): Integer;
 begin
   GetCheckPointY := CheckPoints[no].Y;
 end;
-{-------------------------------------}
+
 function TCustomRichView.GetJumpPointY(no: Integer): Integer;
 var
   i, n: Integer;
 begin
   GetJumpPointY := 0;
   n := no-FirstJumpNo;
-  for i:=0 to Jumps.Count-1 do
+  for i:=0 to FJumpList.Count-1 do
   begin
-    if Jumps[i].id = n then
+    if FJumpList[i].id = n then
     begin
-      GetJumpPointY := Jumps[i].t;
+      GetJumpPointY := FJumpList[i].t;
       Exit;
     end;
   end;
 end;
-{-------------------------------------}
+
 procedure TCustomRichView.AddPicture(gr: TGraphic; AShared: Boolean); { gr not copied, do not free it!}
 var
-  LineInfo: TLineInfo;
+  Item: TRVVisualItem;
 begin
-  LineInfo := TLineInfo.Create();
-  LineInfo.StyleNo := rvsPicture;
-  LineInfo.gr := gr;
-  LineInfo.SameAsPrev := False;
-  LineInfo.Center := True;
-  LineInfo.Text := '';
-  LineInfo.Shared := AShared;
-  Lines.Add(LineInfo);
+  Item := TRVVisualItem.Create();
+  Item.StyleNo := rvsPicture;
+  Item.gr := gr;
+  Item.SameAsPrev := False;
+  Item.Alignment := taCenter;
+  Item.Text := '';
+  Item.Shared := AShared;
+  Items.Add(Item);
 end;
-{-------------------------------------}
+
 procedure TCustomRichView.AddHotSpot(imgNo: Integer; lst: TImageList;
   FromNewLine: Boolean);
 var
-  LineInfo: TLineInfo;
+  Item: TRVVisualItem;
 begin
-  LineInfo := TLineInfo.Create();
-  LineInfo.StyleNo := rvsHotSpot;
-  LineInfo.gr := lst;
-  LineInfo.imgNo := imgNo;
-  LineInfo.SameAsPrev := not FromNewLine;
-  LineInfo.Text := '';
-  Lines.Add(LineInfo);
+  Item := TRVVisualItem.Create();
+  Item.StyleNo := rvsHotSpot;
+  Item.gr := lst;
+  Item.imgNo := imgNo;
+  Item.SameAsPrev := not FromNewLine;
+  Item.Text := '';
+  Items.Add(Item);
 end;
-{-------------------------------------}
+
 procedure TCustomRichView.AddBullet(imgNo: Integer; lst: TImageList;
   FromNewLine: Boolean);
 var
-  LineInfo: TLineInfo;
+  Item: TRVVisualItem;
 begin
-  LineInfo := TLineInfo.Create();
-  LineInfo.StyleNo := rvsBullet;
-  LineInfo.gr := lst;
-  LineInfo.imgNo := imgNo;
-  LineInfo.SameAsPrev := not FromNewLine;
-  LineInfo.Text := '';
-  Lines.Add(LineInfo);
+  Item := TRVVisualItem.Create();
+  Item.StyleNo := rvsBullet;
+  Item.gr := lst;
+  Item.imgNo := imgNo;
+  Item.SameAsPrev := not FromNewLine;
+  Item.Text := '';
+  Items.Add(Item);
 end;
-{-------------------------------------}
-procedure TCustomRichView.AddControl(ctrl: TControl; center: Boolean;
-  AShared: Boolean); { do not free ctrl! }
+
+procedure TCustomRichView.AddControl(ACtrl: TControl; ACentered: Boolean;
+  AShared: Boolean);
 var
-  LineInfo: TLineInfo;
+  Item: TRVVisualItem;
 begin
-  LineInfo := TLineInfo.Create();
-  LineInfo.StyleNo := rvsComponent;
-  LineInfo.gr := ctrl;
-  LineInfo.SameAsPrev := False;
-  LineInfo.Center := center;
-  LineInfo.Text := '';
-  LineInfo.Shared := AShared;
-  Lines.Add(LineInfo);
-  InsertControl(ctrl);
+  Item := TRVVisualItem.Create();
+  Item.StyleNo := rvsComponent;
+  Item.gr := ACtrl;
+  Item.SameAsPrev := False;
+  if ACentered then
+    Item.Alignment := taCenter
+  else
+    Item.Alignment := FDefaultAlignment;
+  Item.Text := '';
+  Item.Shared := AShared;
+  Items.Add(Item);
+  InsertControl(ACtrl);
 end;
-{-------------------------------------}
+
 function TCustomRichView.GetMaxPictureWidth(): Integer;
 var
   i: Integer;
-  LineInfo: TLineInfo;
+  Item: TRVItem;
 begin
   Result := 0;
-  for i := 0 to lines.Count-1 do
+  for i := 0 to Items.Count-1 do
   begin
-   LineInfo := Lines[i];
-   if LineInfo.StyleNo = rvsPicture then
+   Item := Items[i];
+   if Item.StyleNo = rvsPicture then
    begin
-     if Result < TGraphic(LineInfo.gr).Width then
-       Result := TGraphic(LineInfo.gr).Width;
+     if Result < TGraphic((Item as TRVVisualItem).gr).Width then
+       Result := TGraphic((Item as TRVVisualItem).gr).Width;
    end;
-   if LineInfo.StyleNo = rvsComponent then
+   if Item.StyleNo = rvsComponent then
    begin
-     if Result < TControl(LineInfo.gr).Width then
-       Result := TControl(LineInfo.gr).Width;
+     if Result < TControl((Item as TRVVisualItem).gr).Width then
+       Result := TControl((Item as TRVVisualItem).gr).Width;
    end;
  end;
 end;
-{-------------------------------------}
-function max(a, b: Integer): Integer;
+
+function Max(a, b: Integer): Integer;
 begin
   if a > b then
     Result := a
   else
     Result := b;
 end;
-{-------------------------------------}
+
 procedure TCustomRichView.Format_(OnlyResized: Boolean; depth: Integer; Canvas: TCanvas;
           OnlyTail: Boolean);
 var
@@ -931,19 +829,19 @@ begin
     EndNo := 0;
     StartOffs := 0;
     EndOffs := 0;
-    StoreSelBounds(StartNo, EndNo, StartOffs, EndOffs);
+    GetItemsSelBounds(StartNo, EndNo, StartOffs, EndOffs);
   end;
 
   OldY := VPos * SmallStep;
 
   oldtextwidth := TextWidth;
 
-  mx := max(ClientWidth-(FLeftMargin+FRightMargin), GetMaxPictureWidth);
+  mx := Max(ClientWidth - (FLeftMargin + FRightMargin), GetMaxPictureWidth);
   if mx < FMinTextWidth then
     mx := FMinTextWidth;
   if FClientTextWidth then
   begin { widths of pictures and maxtextwidth are ignored }
-    TextWidth := ClientWidth-(FLeftMargin+FRightMargin);
+    TextWidth := ClientWidth - (FLeftMargin + FRightMargin);
     if TextWidth < FMinTextWidth then
       TextWidth := FMinTextWidth;
   end
@@ -954,6 +852,7 @@ begin
     else
       TextWidth := mx;
   end;
+  // format lines
   if not (OnlyResized and (TextWidth = OldTextWidth)) then
   begin
     if OnlyTail then
@@ -974,9 +873,9 @@ begin
     sad.LeftMargin := 0;
     InfoAboutSaD(sad, Canvas);
     sad.LeftMargin := MulDiv(FLeftMargin, sad.ppixDevice, sad.ppixScreen);
-    for i := StartLine to lines.Count-1 do
+    for i := StartLine to Items.Count-1 do
     begin
-      StyleNo := Lines[i].StyleNo;
+      StyleNo := Items[i].StyleNo;
       if not (((StyleNo = rvsPicture) and (not (rvdoImages in DisplayOptions)))
       or ((StyleNo = rvsComponent) and (not (rvdoComponents in DisplayOptions)))
       or (((StyleNo = rvsBullet) or (StyleNo = rvsHotspot)) and (not (rvdoBullets in DisplayOptions))))
@@ -991,6 +890,7 @@ begin
   else
     AdjustChildrenCoords();
 
+  // Update scrollbars and visible position
   HPos := 0;
   VPos := 0;
   cw := ClientWidth;
@@ -1006,123 +906,128 @@ begin
     ScrollTo(OldY);
   if OnlyTail then
     ScrollTo(TextHeight);
-  if depth=0 then
-    RestoreSelBounds(StartNo, EndNo, StartOffs, EndOffs);
+  //!!!if depth=0 then
+  //  SetItemsSelBounds(StartNo, EndNo, StartOffs, EndOffs);
 
   skipformatting := False;
-  LastLineFormatted := Lines.Count-1;
+  LastLineFormatted := Items.Count-1;
 end;
-{-------------------------------------}
+
 procedure TCustomRichView.AdjustChildrenCoords();
 var
   i: Integer;
-  dli: TDrawLineInfo;
-  li: TLineInfo;
+  Item: TRVItem;
+  VisItem: TRVVisualItem;
 begin
-  for i := 0 to DrawLines.Count-1 do
+  for i := 0 to Items.Count-1 do
   begin
-    dli := DrawLines[i];
-    li := Lines[dli.LineNo];
-    if li.StyleNo = rvsComponent then {control}
+    Item := Items[i];
+    if Item.StyleNo = rvsComponent then {control}
     begin
-      TControl(li.gr).Left := dli.Left;
-      TControl(li.gr).Tag := dli.Top;
-      Tag2Y(TControl(li.gr));
+      VisItem := (Item as TRVVisualItem);
+      TControl(VisItem.gr).Left := VisItem.Left;
+      TControl(VisItem.gr).Tag := VisItem.Top;
+      Tag2Y(TControl(VisItem.gr));
     end;
   end;
 end;
-{-------------------------------------}
-procedure TCustomRichView.FormatLine(no: Integer; var x, baseline, prevdesc, prevabove: Integer;
+
+{ x        - X position
+  baseline - base Y position of line
+  prevDesc - Descent (units below the base line) of characters
+  prevAbove - ascent (units above the base line) of characters }
+procedure TCustomRichView.FormatLine(no: Integer; var x, baseline, prevDesc, prevAbove: Integer;
           Canvas: TCanvas; var sad: TScreenAndDevice);
 var sourceStrPtr, strForAdd, strSpacePos: PChar;
     sourceStrPtrLen: Integer;
     sz: TSIZE;
-    max, j, y, ctrlw, ctrlh : Integer;
+    maxChars, j, y, ctrlw, ctrlh : Integer;
 {$IFNDEF RICHVIEWDEF4}
     arr: array[0..1000] of integer;
 {$ENDIF}
     char_arr: array[0..1000] of char;
-    LineInfo: TLineInfo;
-    DLInfo: TDrawLineInfo;
+    strForAddMaxLen: Integer;
+    Item, SubItem, CurItem: TRVItem;
+    VisItem: TRVVisualItem;
     TextMetr: TTextMetric;
     StyleNo: Integer;
-    newline, center:Boolean;
+    IsNewLine, IsCenter: Boolean;
     CPInfo: TCPInfo;
     JmpInfo: TJumpInfo;
-    width, y5, Offs : Integer;
+    width, y5, Offs: Integer;
+    hBetweenLines: Integer;
 begin
   width := TextWidth;
   y := 0;
-  LineInfo := Lines[no];
-  case LineInfo.StyleNo of
+  Item := Items[no];
+  case Item.StyleNo of
     rvsComponent: { Control }
     begin
-      ctrlw := TControl(LineInfo.gr).Width;
-      ctrlh := TControl(LineInfo.gr).Height;
+      FVisibleItems.Add(Item);
+      VisItem := (Item as TRVVisualItem);
+      ctrlw := TControl(VisItem.gr).Width;
+      ctrlh := TControl(VisItem.gr).Height;
       ctrlw := MulDiv(ctrlw, sad.ppixDevice, sad.ppixScreen);
       ctrlh := MulDiv(ctrlh, sad.ppiyDevice, sad.ppiyScreen);
 
-      DLInfo        := TDrawLineInfo.Create();
-      DLInfo.LineNo := no;
-      DLInfo.Top    := baseline + prevdesc + 1;
-      DLInfo.Width  := ctrlw;
-      DLInfo.Height := ctrlh+1;
-      if LineInfo.Center then
+      Item.Top    := baseline + prevDesc + 1;
+      Item.Width  := ctrlw;
+      Item.Height := ctrlh+1;
+      if Item.Alignment = taCenter then
       begin
-        DLInfo.Left   := (width-ctrlw) div 2;
-        if DLInfo.Left < 0 then
-          DLInfo.Left := 0;
-        Inc(DLInfo.Left, sad.LeftMargin);
+        Item.Left   := (width-ctrlw) div 2;
+        if Item.Left < 0 then
+          Item.Left := 0;
+        Inc(Item.Left, sad.LeftMargin);
       end
       else
       begin
-        DLInfo.Left := sad.LeftMargin;
+        Item.Left := sad.LeftMargin;
       end;
-      DLInfo.Text := '';
-      DrawLines.Add(DLInfo);
-      TControl(LineInfo.gr).Left := DLInfo.Left;
-      TControl(LineInfo.gr).Tag := DLInfo.Top;
-      Tag2Y(TControl(LineInfo.gr));
-      Inc(baseline, prevdesc + ctrlh + 1);
-      prevdesc := 1;
-      prevabove := ctrlh + 1;
+      TControl(VisItem.gr).Left := VisItem.Left;
+      TControl(VisItem.gr).Tag := VisItem.Top;
+      Tag2Y(TControl(VisItem.gr));
+      Inc(baseline, prevDesc + ctrlh + 1);
+      prevDesc := 1;
+      prevAbove := ctrlh + 1;
     end;
 
     rvsHotSpot, rvsBullet:
     begin
-      ctrlw := TImageList(LineInfo.gr).Width;
-      ctrlh := TImageList(LineInfo.gr).Height;
+      FVisibleItems.Add(Item);
+      VisItem := (Item as TRVVisualItem);
+      ctrlw := TImageList(VisItem.gr).Width;
+      ctrlh := TImageList(VisItem.gr).Height;
       ctrlw := MulDiv(ctrlw, sad.ppixDevice, sad.ppixScreen);
       ctrlh := MulDiv(ctrlh, sad.ppiyDevice, sad.ppiyScreen);
-      DLInfo := TDrawLineInfo.Create();
-      DLInfo.Width  := ctrlw+1;
-      DLInfo.Height := ctrlh+1;
-      if (not LineInfo.SameAsPrev) or (x + ctrlw + 2 > width) then
+      VisItem.Width  := ctrlw+1;
+      VisItem.Height := ctrlh+1;
+      if (not Item.SameAsPrev) or (x + ctrlw + 2 > width) then
       begin
         x := 0;
-        y := baseline + prevdesc;
-        Inc(baseline, prevdesc + ctrlh + 1);
-        prevdesc := 1;
-        prevabove := ctrlh + 1;
+        y := baseline + prevDesc;
+        Inc(baseline, prevDesc + ctrlh + 1);
+        prevDesc := 1;
+        prevAbove := ctrlh + 1;
       end
       else
       begin
-        if prevabove < ctrlh + 1 then
+        if prevAbove < ctrlh + 1 then
         begin
-          j := DrawLines.Count-1;
+          j := FVisibleItems.Count-1;
           if j >= 0 then
           begin
             repeat
-              Inc(DrawLines[j].Top, ctrlh+1-prevabove);
+              Inc(FVisibleItems[j].Top, ctrlh + 1 - prevAbove);
               Dec(j);
-            until DrawLines[j+1].FromNewLine;
+            until FVisibleItems[j+1].FromNewLine;
           end;
-          Inc(baseline, ctrlh + 1 - prevabove);
-          prevabove := ctrlh + 1;
+          Inc(baseline, ctrlh + 1 - prevAbove);
+          prevAbove := ctrlh + 1;
           y := baseline - (ctrlh + 1);
         end;
       end;
-      if LineInfo.StyleNo = rvsHotSpot then
+      if Item.StyleNo = rvsHotSpot then
       begin
         JmpInfo     := TJumpInfo.Create();
         JmpInfo.l   := x + 1 + sad.LeftMargin;;
@@ -1130,76 +1035,70 @@ begin
         JmpInfo.w   := ctrlw;
         JmpInfo.h   := ctrlh;
         JmpInfo.id  := nJmps;
-        JmpInfo.idx := DrawLines.Count;
+        JmpInfo.VisibleItemId := no;
         JmpInfo.Text:= '';
-        Jumps.Add(JmpInfo);
+        FJumpList.Add(JmpInfo);
         Inc(nJmps);
       end;
-      DLInfo.Left := x + 1 + sad.LeftMargin;;
+      Item.Left := x + 1 + sad.LeftMargin;;
       Inc(x, ctrlw+2);
-      DLInfo.Top := y + 1;
-      DLInfo.LineNo := no;
-      DLInfo.FromNewLine := not LineInfo.SameAsPrev;
-      DLInfo.Text := '';
-      DrawLines.Add(DLInfo);
+      Item.Top := y + 1;
+      Item.FromNewLine := not Item.SameAsPrev;
     end;
 
     rvsPicture:  { graphics}
     begin
-      ctrlw       := TGraphic(LineInfo.gr).Width;
-      ctrlh       := TGraphic(LineInfo.gr).Height;
+      FVisibleItems.Add(Item);
+      VisItem := (Item as TRVVisualItem);
+      ctrlw       := TGraphic(VisItem.gr).Width;
+      ctrlh       := TGraphic(VisItem.gr).Height;
       ctrlw       := MulDiv(ctrlw, sad.ppixDevice, sad.ppixScreen);
       ctrlh       := MulDiv(ctrlh, sad.ppiyDevice, sad.ppiyScreen);
 
-      DLInfo        := TDrawLineInfo.Create();
-      DLInfo.Width  := ctrlw;
-      DLInfo.Height := ctrlh+1;
-      DLInfo.Left   := (width-ctrlw) div 2;
-      if DLInfo.Left < 0 then
-        DLInfo.Left := 0;
-      Inc(DLInfo.Left, sad.LeftMargin);
-      DLInfo.Top    := baseline + prevdesc + 1;
-      DLInfo.LineNo := no;
-      DLInfo.Text := '';
-      DrawLines.Add(DLInfo);
-      Inc(baseline, prevdesc + ctrlh + 1);
-      prevdesc    := 1;
-      prevabove   := ctrlh+1;
+      Item.Width  := ctrlw;
+      Item.Height := ctrlh+1;
+      Item.Left   := (width-ctrlw) div 2;
+      if Item.Left < 0 then
+        Item.Left := 0;
+      Inc(Item.Left, sad.LeftMargin);
+      Item.Top    := baseline + prevDesc + 1;
+      Inc(baseline, prevDesc + ctrlh + 1);
+      prevDesc    := 1;
+      prevAbove   := ctrlh+1;
     end;
 
     rvsCheckPoint: { check point}
     begin
       CPInfo   := TCPInfo.Create();
       CPInfo.Y := baseline + prevDesc;
-      CPInfo.LineNo := no;
-      CPInfo.Text := LineInfo.Text;
+      CPInfo.ItemIndex := no;
+      CPInfo.Text := Item.Text;
       CheckPoints.Add(CPInfo);
     end;
 
     rvsBreak: { break line}
     begin
+      FVisibleItems.Add(Item);
       y5            := MulDiv(5, sad.ppiyDevice, sad.ppiyScreen);
-      DLInfo        := TDrawLineInfo.Create();
-      DLInfo.Left   := sad.LeftMargin;
-      DLInfo.Top    := baseline + prevdesc;
-      DLInfo.LineNo := no;
-      DLInfo.Width  := Width;
-      DLInfo.Height := y5 + y5 + 1;
-      DLInfo.Text := LineInfo.Text;
-      DrawLines.Add(DLInfo);
-      Inc(baseline, prevdesc + y5 + y5 + 1);
-      prevdesc  := y5;
-      prevabove := y5;
+      Item.Left   := sad.LeftMargin;
+      Item.Top    := baseline + prevDesc;
+      Item.Width  := Width;
+      Item.Height := y5 + y5 + 1;
+      Inc(baseline, prevDesc + y5 + y5 + 1);
+      prevDesc  := y5;
+      prevAbove := y5;
     end;
 
-  else
+  else // rvsText
     begin
-      sourceStrPtr := PChar(LineInfo.Text);
-      char_arr[1] := #0; // eliminate warning
+      // length of source string
+      sourceStrPtr := PChar(Item.Text);
+      char_arr[0] := #0; // eliminate warning
       strForAdd := char_arr;
+      strForAddMaxLen := SizeOf(char_arr) - 1;
       sourceStrPtrLen := StrLen(sourceStrPtr);
 
-      StyleNo := LineInfo.StyleNo;
+      StyleNo := Item.StyleNo;
       with FStyle.TextStyles[StyleNo] do
       begin
         Canvas.Font.Style := Style;
@@ -1211,103 +1110,119 @@ begin
       end;
       TextMetr.tmAscent := 0;
       GetTextMetrics(Canvas.Handle, TextMetr);
-      newline := not LineInfo.SameAsPrev;
-      Center := LineInfo.Center;
+      hBetweenLines := TextMetr.tmExternalLeading + TextMetr.tmAscent;
+      IsNewLine := not Item.SameAsPrev;
+      IsCenter := (Item.Alignment = taCenter);
+      CurItem := Item;
       while sourceStrPtrLen > 0 do
       begin
-        if newline then
+        if IsNewLine then
           x := 0;
         sz.cx := 0;
         sz.cy := 0;
+        // get number of characters that will fit in specified width
         {$IFDEF FPC}
         MyGetTextExtentExPoint(Canvas.Handle,  sourceStrPtr,  sourceStrPtrLen, Width-x,
         {$ELSE}
         GetTextExtentExPoint(Canvas.Handle,  sourceStrPtr,  sourceStrPtrLen, Width-x,
         {$ENDIF}
                             {$IFDEF RICHVIEWDEF4}
-                            @max, nil,
+                            @maxChars, nil,
                             {$ELSE}
-                            max, arr[0],
+                            maxChars, arr[0],
                             {$ENDIF}
                             sz);
 
-        if max = 0 then
-          max := 1;
-        StrLCopy(strForAdd, sourceStrPtr, max);
-        if max < sourceStrPtrLen then
+        if maxChars = 0 then
+          maxChars := 1;
+        if maxChars > strForAddMaxLen then
+          maxChars := strForAddMaxLen;
+        if maxChars < sourceStrPtrLen then
         begin
+          // source text not fit to line, need split at space char
           {if  sourceStrPtr[max] <> ' ' then }
-          StrLCopy(strForAdd, sourceStrPtr, max);
+          StrLCopy(strForAdd, sourceStrPtr, maxChars);
           strSpacePos := StrRScan(strForAdd, ' ');
           if strSpacePos <> nil then
           begin
-            max := strSpacePos - strForAdd;
-            StrLCopy(strForAdd, sourceStrPtr,max);
-            Inc(max);
+            maxChars := strSpacePos - strForAdd;
+            StrLCopy(strForAdd, sourceStrPtr, maxChars);
+            Inc(maxChars);
           end
           else
           begin
-            if not newline then
+            if not IsNewLine then
             begin
               x := 0;
-              newline := true;
+              IsNewLine := true;
               Continue;
             end;
           end;
+        end
+        else
+        begin
+          StrLCopy(strForAdd, sourceStrPtr, maxChars);
         end;
-        Offs := sourceStrPtr - PChar(LineInfo.Text) + 1;
-        sourceStrPtr := @(sourceStrPtr[max]);
-        DLInfo := TDrawLineInfo.Create();
-        DLInfo.LineNo := no;
-        DLInfo.Offs := Offs;
+        Offs := sourceStrPtr - PChar(Item.Text) + 1;
+        sourceStrPtr := @(sourceStrPtr[maxChars]);
+        if (Offs > 1) or (maxChars < Length(Item.Text)) then
+        begin
+          // add subitem
+          SubItem := TRVItem.Create();
+          SubItem.StyleNo := Item.StyleNo;
+          SubItem.ParentItem := Item;
+          SubItem.IsSubItem := True;
+          CurItem := SubItem;
+          CurItem.Text := strForAdd;
+        end;
+        CurItem.TextOffs := Offs; // offset in source text
         {$IFDEF FPC}
         MyGetTextExtentExPoint(Canvas.Handle,  strForAdd,  StrLen(strForAdd), Width-x,
         {$ELSE}
         GetTextExtentExPoint(Canvas.Handle,  strForAdd,  StrLen(strForAdd), Width-x,
         {$ENDIF}
            {$IFDEF RICHVIEWDEF4}
-           @max, nil,
+           @maxChars, nil,
            {$ELSE}
-           max,arr[0],
+           maxChars, arr[0],
            {$ENDIF}
            sz);
-        if not newline then
+        if not IsNewLine then
         begin
           {continue line}
-          if prevabove < TextMetr.tmExternalLeading+TextMetr.tmAscent then
+          if prevAbove < hBetweenLines then
           begin
-            j := DrawLines.Count-1;
+            j := FVisibleItems.Count-1;
             if j >= 0 then
             begin
               repeat
-                Inc(DrawLines[j].Top, TextMetr.tmExternalLeading + TextMetr.tmAscent - prevabove);
+                Inc(FVisibleItems[j].Top, hBetweenLines - prevAbove);
                 Dec(j);
-              until DrawLines[j+1].FromNewLine or (j < 0);
+              until FVisibleItems[j+1].FromNewLine or (j < 0);
             end;
-            Inc(baseline, TextMetr.tmExternalLeading + TextMetr.tmAscent - prevabove);
-            prevabove := TextMetr.tmExternalLeading + TextMetr.tmAscent;
+            Inc(baseline, hBetweenLines - prevAbove);
+            prevAbove := hBetweenLines;
           end;
           y := baseline - TextMetr.tmAscent;
-          DLInfo.FromNewLine := False;
+          CurItem.FromNewLine := False;
         end
         else
         begin
           { new line }
-          DLInfo.FromNewLine := True;
-          if Center then
+          CurItem.FromNewLine := True;
+          if IsCenter then
             x := (Width - sz.cx) div 2
           else
             x :=0;
           y := baseline + prevDesc + TextMetr.tmExternalLeading;
-          Inc(baseline, prevDesc + TextMetr.tmExternalLeading + TextMetr.tmAscent);
-          prevabove := TextMetr.tmExternalLeading + TextMetr.tmAscent;
+          Inc(baseline, prevDesc + hBetweenLines);
+          prevAbove := hBetweenLines;
         end;
-        DLInfo.Left   := x + sad.LeftMargin;
-        DLInfo.Top    := y;
-        DLInfo.Width  := sz.cx;
-        DLInfo.Height := sz.cy;
-        DLInfo.Text := strForAdd;
-        DrawLines.Add(DLInfo);
+        CurItem.Left   := x + sad.LeftMargin;
+        CurItem.Top    := y;
+        CurItem.Width  := sz.cx;
+        CurItem.Height := sz.cy;
+        FVisibleItems.Add(CurItem);
         if (StyleNo = rvsJump1) or (StyleNo = rvsJump2) then
         begin
           JmpInfo := TJumpInfo.Create();
@@ -1316,92 +1231,96 @@ begin
           JmpInfo.w := sz.cx;
           JmpInfo.h := sz.cy;
           JmpInfo.id := nJmps;
-          JmpInfo.idx := DrawLines.Count-1;
+          JmpInfo.VisibleItemId := FVisibleItems.Count-1;
           JmpInfo.Text := '';
-          LineInfo.imgNo := nJmps;
-          Jumps.Add(JmpInfo);
+          Item.JumpId := nJmps;
+          FJumpList.Add(JmpInfo);
         end;
         sourceStrPtrLen := StrLen(sourceStrPtr);
-        if newline or (prevDesc < TextMetr.tmDescent) then
+        if IsNewLine or (prevDesc < TextMetr.tmDescent) then
           prevDesc := TextMetr.tmDescent;
         Inc(x, sz.cx);
-        newline := True;
+        IsNewLine := True;
       end; {while sourceStrPtrLen > 0 do}
       if (StyleNo = rvsJump1) or (StyleNo = rvsJump2) then
         Inc(nJmps);
     end;
   end;
 end;
-{-------------------------------------}
+
 procedure TCustomRichView.AdjustJumpsCoords();
 var
   i: Integer;
   JumpInfo: TJumpInfo;
 begin
-  for i:=0 to jumps.Count-1 do
+  for i:=0 to FJumpList.Count-1 do
   begin
-    JumpInfo := Jumps[i];
-    JumpInfo.l := DrawLines[JumpInfo.idx].left;
-    JumpInfo.t := DrawLines[JumpInfo.idx].top;
+    JumpInfo := FJumpList[i];
+    JumpInfo.l := FVisibleItems[JumpInfo.VisibleItemId].left;
+    JumpInfo.t := FVisibleItems[JumpInfo.VisibleItemId].top;
   end;
 end;
-{-------------------------------------}
-const gdlnFirstVisible = 1;
-const gdlnLastCompleteVisible = 2;
-const gdlnLastVisible = 3;
-{-------------------------------------}
+
 function TCustomRichView.GetFirstVisible(TopLine: Integer): Integer;
 begin
-   Result := GetDrawLineNo(TopLine, gdlnFirstVisible);
+  Result := GetVisibleItemIndex(TopLine, gdlnFirstVisible);
 end;
-{-------------------------------------}
+
+function TCustomRichView.GetItemIdByVisibleId(AVisibleId: Integer): Integer;
+begin
+  if AVisibleId >= FVisibleItems.Count then
+    AVisibleId := FVisibleItems.Count-1;
+  while AVisibleId >= 0 do
+  begin
+    if FVisibleItems[AVisibleId].IsSubItem then
+      Dec(AVisibleId)
+    else
+      Break;
+  end;
+
+  if AVisibleId < 0 then
+    Result := -1
+  else
+    Result := Items.IndexOf(FVisibleItems[AVisibleId]);
+end;
+
 function TCustomRichView.GetFirstLineVisible(): Integer;
 var
   v: Integer;
 begin
-  v := GetDrawLineNo(VPos*SmallStep, gdlnFirstVisible);
-  if v >= DrawLines.Count then
-    v := DrawLines.Count-1;
-  if v < 0 then
-    Result := -1
-  else
-    Result := DrawLines[v].LineNo;
+  v := GetVisibleItemIndex(VPos * SmallStep, gdlnFirstVisible);
+  Result := GetItemIdByVisibleId(v);
 end;
-{-------------------------------------}
+
 function TCustomRichView.GetLastLineVisible(): Integer;
 var
   v: Integer;
 begin
-  v := GetDrawLineNo(VPos*SmallStep + ClientHeight, gdlnLastVisible);
-  if v >= DrawLines.Count then
-    v := DrawLines.Count-1;
-  if v < 0 then
-    Result := -1
-  else
-    Result := DrawLines[v].LineNo;
+  v := GetVisibleItemIndex(VPos * SmallStep + ClientHeight, gdlnLastVisible);
+  Result := GetItemIdByVisibleId(v);
 end;
-{-------------------------------------}
-function TCustomRichView.GetDrawLineNo(BoundLine: Integer; Option: Integer): Integer;
+
+function TCustomRichView.GetVisibleItemIndex(BoundLine: Integer; Option: Integer): Integer;
 var
   a, b, mid: Integer;
 begin
-  if DrawLines.Count = 0 then
+  if FVisibleItems.Count = 0 then
   begin
     Result := 0;
     Exit;
   end;
-  if DrawLines[0].Top >= BoundLine then
+  if FVisibleItems[0].Top >= BoundLine then
   begin
     Result := 0;
     Exit;
   end;
-  if (Option = gdlnLastVisible) and (DrawLines[DrawLines.Count-1].Top < BoundLine) then
+  if (Option = gdlnLastVisible) and (FVisibleItems[FVisibleItems.Count-1].Top < BoundLine) then
   begin
-    Result := DrawLines.Count-1;
+    Result := FVisibleItems.Count-1;
     Exit;
   end;
   a := 1;
-  b := DrawLines.Count-1;
+  b := FVisibleItems.Count-1;
   mid := a;
   if Option = gdlnLastCompleteVisible then
   begin
@@ -1433,31 +1352,31 @@ begin
     while (b-a) > 1 do
     begin
       mid := (a+b) div 2;
-      if (DrawLines[mid].Top >= BoundLine) then
+      if (FVisibleItems[mid].Top >= BoundLine) then
       begin
-        if (DrawLines[mid-1].Top < BoundLine) then
+        if (FVisibleItems[mid-1].Top < BoundLine) then
           Break;
         b := mid;
       end
       else
         a := mid;
     end;
-    if mid >= DrawLines.Count then
-      mid := DrawLines.Count-1;
+    if mid >= FVisibleItems.Count then
+      mid := FVisibleItems.Count-1;
     if Option = gdlnFirstVisible then
     begin
-      while (mid > 0) and (not DrawLines[mid].FromNewLine) do
+      while (mid > 0) and (not FVisibleItems[mid].FromNewLine) do
         Dec(mid);
       if (mid > 0) then
         Dec(mid);
-      while (mid > 0) and (not DrawLines[mid].FromNewLine) do
+      while (mid > 0) and (not FVisibleItems[mid].FromNewLine) do
         Dec(mid);
       if (mid > 0) then
         Dec(mid);
     end
     else
     begin
-      while DrawLines[mid].Top < BoundLine do
+      while FVisibleItems[mid].Top < BoundLine do
         Inc(mid);
     end;
   end;
@@ -1522,15 +1441,15 @@ begin
 end;
 {$ENDIF}
 
-{-------------------------------------}
+
 procedure TCustomRichView.Paint();
 var
-  i, no, yshift, xshift: Integer;
-  cl, textcolor: TColor;
-  dli: TDrawLineInfo;
-  li: TLineInfo;
+  i, StyleNo, yshift, xshift: Integer;
+  cl, TextColor: TColor;
+  Item: TRVItem;
+  VisItem: TRVVisualItem;
   IsLastLine, IsHoverNow: Boolean;
-  r: TRect;
+  rc, r: TRect;
   buffer: TBitmap;
   canv: TCanvas;
   s, s1: String;
@@ -1538,6 +1457,7 @@ var
   {$IFDEF FPC}
   St: string;
   {$ENDIF}
+  MouseItemId: Integer;
 begin
   if (csDesigning in ComponentState) or not Assigned(FStyle) then
   begin
@@ -1563,63 +1483,64 @@ begin
     Exit;
   end;
 
-  GetSelBounds(StartNo, EndNo, StartOffs, EndOffs);
+  GetVisibleSelBounds(StartNo, EndNo, StartOffs, EndOffs);
   IsLastLine := False;
-  r := Canvas.ClipRect;
+  rc := Canvas.ClipRect;
   buffer := TBitmap.Create();
   try
-    buffer.Width := r.Right-r.Left+1;
-    buffer.Height := r.Bottom-r.Top+1;
+    buffer.Width := rc.Right-rc.Left+1;
+    buffer.Height := rc.Bottom-rc.Top+1;
     canv := buffer.Canvas;
     DrawBack(canv.Handle, Canvas.ClipRect, ClientWidth, ClientHeight);
     yshift := VPos * SmallStep;
-    Inc(r.Top, yshift);
-    Inc(r.Bottom, yshift);
+    Inc(rc.Top, yshift);
+    Inc(rc.Bottom, yshift);
     Inc(yshift, Canvas.ClipRect.Top);
     xshift := HPos + Canvas.ClipRect.Left;
     canv.Brush.Style := bsClear;
 
-    for i := GetFirstVisible(r.Top) to DrawLines.Count-1 do
+    MouseItemId := FindVisItemAtPos(XMouse, YMouse);
+
+    for i := GetFirstVisible(rc.Top) to FVisibleItems.Count-1 do
     begin
-      dli := DrawLines[i];
-      if IsLastLine and (dli.Left <= DrawLines[i-1].left) then
+      Item := FVisibleItems[i];
+      if IsLastLine and (Item.Left <= FVisibleItems[i-1].left) then
         Break;
-      if dli.Top > r.Bottom then
+      if Item.Top > rc.Bottom then
         IsLastLine := True;
 
-      li := Lines[dli.LineNo];
-      no := li.StyleNo;
+      StyleNo := Item.StyleNo;
 
-      if no >= 0 then
+      if StyleNo >= 0 then
       begin { text }
-        canv.Font.Style := FStyle.TextStyles[no].Style;
-        canv.Font.Size := FStyle.TextStyles[no].Size;
-        canv.Font.Name := FStyle.TextStyles[no].FontName;
+        canv.Font.Style := FStyle.TextStyles[StyleNo].Style;
+        canv.Font.Size := FStyle.TextStyles[StyleNo].Size;
+        canv.Font.Name := FStyle.TextStyles[StyleNo].FontName;
         {$IFDEF RICHVIEWDEF3}
-        canv.Font.CharSet := FStyle.TextStyles[no].CharSet;
+        canv.Font.CharSet := FStyle.TextStyles[StyleNo].CharSet;
         {$ENDIF}
 
-        if not ((no in [rvsJump1, rvsJump2]) and DrawHover and (LastJumpMovedAbove <> -1) and (li.ImgNo = LastJumpMovedAbove)) then
+        if not ((StyleNo in [rvsJump1, rvsJump2]) and DrawHover and (LastJumpMovedAbove <> -1) and (Item.JumpId = LastJumpMovedAbove)) then
         begin
-          textcolor := FStyle.TextStyles[no].Color;
+          TextColor := FStyle.TextStyles[StyleNo].Color;
           IsHoverNow := False;
         end
         else
         begin
-          textcolor := FStyle.HoverColor;
+          TextColor := FStyle.HoverColor;
           IsHoverNow := True;
-          canv.Font.Color := textcolor;
+          canv.Font.Color := TextColor;
         end;
 
         if (StartNo > i) or (EndNo < i) then
         begin
-          canv.Font.Color := textcolor;
-          canv.TextOut(dli.Left-xshift, dli.Top-yshift, dli.Text);
+          canv.Font.Color := TextColor;
+          canv.TextOut(Item.Left-xshift, Item.Top-yshift, Item.Text);
         end
         else
         if ((StartNo < i) and (EndNo > i))
         or ((StartNo = i) and (EndNo <> i) and (StartOffs <= 1))
-        or ((StartNo <> i) and (EndNo = i) and (EndOffs > Length(DrawLines[i].Text)))
+        or ((StartNo <> i) and (EndNo = i) and (EndOffs > Length(FVisibleItems[i].Text)))
         then
         begin
           canv.Brush.Style := bsSolid;
@@ -1627,99 +1548,113 @@ begin
           if not IsHoverNow then
             canv.Font.Color := FStyle.SelTextColor;
           {$IFDEF FPC}
-          TxtOut(canv, dli.Left-xshift, dli.Top-yshift, dli.Text);
+          TxtOut(canv, Item.Left-xshift, Item.Top-yshift, Item.Text);
           {$ELSE}
-          canv.TextOut(dli.Left-xshift, dli.Top-yshift, dli.Text);
+          canv.TextOut(Item.Left-xshift, Item.Top-yshift, Item.Text);
           {$ENDIF}
           canv.Brush.Style := bsClear;
         end
         else
         if (StartNo = i) then
         begin
-          canv.Font.Color := textcolor;
-          s := Copy(dli.Text, 1, StartOffs-1);
-          canv.TextOut(dli.Left-xshift, dli.Top-yshift, s);
+          canv.Font.Color := TextColor;
+          s := Copy(Item.Text, 1, StartOffs-1);
+          canv.TextOut(Item.Left-xshift, Item.Top-yshift, s);
           canv.Brush.Style := bsSolid;
           canv.Brush.Color := FStyle.SelColor;
           if not IsHoverNow then
             canv.Font.Color := FStyle.SelTextColor;
-          if (i <> EndNo) or (EndOffs > Length(dli.Text)) then
+          if (i <> EndNo) or (EndOffs > Length(Item.Text)) then
           begin
             {$IFDEF FPC}
-            St := Copy(dli.Text, StartOffs, Length(dli.Text));
-            TxtOut(canv, dli.Left-xshift + canv.TextWidth(s), dli.Top-yshift, st);
+            St := Copy(Item.Text, StartOffs, Length(Item.Text));
+            TxtOut(canv, Item.Left-xshift + canv.TextWidth(s), Item.Top-yshift, st);
             {$ELSE}
-            canv.TextOut(dli.Left-xshift + canv.TextWidth(s), dli.Top-yshift,
-                         Copy(dli.Text, StartOffs, Length(dli.Text)));
+            canv.TextOut(Item.Left-xshift + canv.TextWidth(s), Item.Top-yshift,
+                         Copy(Item.Text, StartOffs, Length(Item.Text)));
             {$ENDIF}
             canv.Brush.Style := bsClear;
           end
           else
           begin
-            s1 := Copy(dli.Text, StartOffs, EndOffs-StartOffs);
+            s1 := Copy(Item.Text, StartOffs, EndOffs-StartOffs);
             {$IFDEF FPC}
-            TxtOut(canv, dli.Left - xshift + canv.TextWidth(s), dli.Top-yshift, s1);
+            TxtOut(canv, Item.Left - xshift + canv.TextWidth(s), Item.Top-yshift, s1);
             {$ELSE}
-            canv.TextOut(dli.Left - xshift + canv.TextWidth(s), dli.Top-yshift, s1);
+            canv.TextOut(Item.Left - xshift + canv.TextWidth(s), Item.Top-yshift, s1);
             {$ENDIF}
-            canv.Font.Color := textcolor;
+            canv.Font.Color := TextColor;
             canv.Brush.Style := bsClear;
-            canv.TextOut(dli.Left - xshift + canv.TextWidth(s+s1), dli.Top-yshift,
-                         Copy(dli.Text, EndOffs, Length(dli.Text)));
+            canv.TextOut(Item.Left - xshift + canv.TextWidth(s+s1), Item.Top-yshift,
+                         Copy(Item.Text, EndOffs, Length(Item.Text)));
           end;
         end
         else
         if (EndNo = i) then
         begin
-          s := Copy(dli.Text, 1, EndOffs-1);
+          s := Copy(Item.Text, 1, EndOffs-1);
           canv.Brush.Style := bsSolid;
           canv.Brush.Color := FStyle.SelColor;
           if (not IsHoverNow) then
             canv.Font.Color := FStyle.SelTextColor;
           {$IFDEF FPC}
-          TxtOut(canv, dli.Left - xshift, dli.Top - yshift, s);
+          TxtOut(canv, Item.Left - xshift, Item.Top - yshift, s);
           {$ELSE}
-          canv.TextOut(dli.Left - xshift, dli.Top - yshift, s);
+          canv.TextOut(Item.Left - xshift, Item.Top - yshift, s);
           {$ENDIF}
           canv.Brush.Style := bsClear;
-          canv.Font.Color := textcolor;
-          canv.TextOut(dli.Left - xshift + canv.TextWidth(s), dli.Top - yshift,
-                       Copy(dli.Text, EndOffs, Length(dli.Text)));
+          canv.Font.Color := TextColor;
+          canv.TextOut(Item.Left - xshift + canv.TextWidth(s), Item.Top - yshift,
+                       Copy(Item.Text, EndOffs, Length(Item.Text)));
+        end;
+        // ~~~
+        if i = MouseItemId then
+        begin
+          r.Left := Item.Left - xshift;
+          r.Top := Item.Top - yshift;
+          r.Right := r.Left + Item.Width;
+          r.Bottom := r.Top + Item.Height;
+          canv.Brush.Style := bsSolid;
+          canv.Brush.Color := clBlue;
+          canv.FrameRect(r);
+          canv.Brush.Style := bsClear;
         end;
         Continue;
       end;
 
-      if (no = rvsPicture)  then
+      if (StyleNo = rvsPicture)  then
       begin { graphics }
-        canv.Draw(dli.Left-xshift, dli.Top-yshift, TGraphic(li.gr));
+        canv.Draw(Item.Left-xshift, Item.Top-yshift, TGraphic(TRVVisualItem(Item).gr));
         Continue;
       end;
 
-      if (no = rvsHotSpot) or (no = rvsBullet)  then
+      if (StyleNo = rvsHotSpot) or (StyleNo = rvsBullet)  then
       begin { hotspots and bullets }
+        VisItem := TRVVisualItem(Item);
         if (StartNo <= i) and (EndNo >= i)
         and (not ((EndNo = i) and (EndOffs = 0)))
         and  (not ((StartNo = i) and (StartOffs = 2)))
         then
         begin
-          TImageList(li.gr).BlendColor := FStyle.SelColor;
-          TImageList(li.gr).DrawingStyle := dsSelected;
+          TImageList(VisItem.gr).BlendColor := FStyle.SelColor;
+          TImageList(VisItem.gr).DrawingStyle := dsSelected;
         end;
-        TImageList(li.gr).Draw(canv, dli.Left-xshift, dli.Top-yshift, li.imgNo);
-        TImageList(li.gr).DrawingStyle := ImgList.dsNormal;
+        TImageList(VisItem.gr).Draw(canv, Item.Left-xshift, Item.Top-yshift, VisItem.imgNo);
+        TImageList(VisItem.gr).DrawingStyle := ImgList.dsNormal;
         Continue;
       end;
 
-      if no = rvsCheckPoint then
+      if StyleNo = rvsCheckPoint then
         Continue; { check point }
 
-      if no = rvsBreak then
+      if StyleNo = rvsBreak then
       begin {break line}
         canv.Pen.Color := FStyle.TextStyles[0].Color;
-        canv.MoveTo(dli.Left + 5 - xshift, dli.Top + 5 - yshift);
-        canv.LineTo(XSize - 5 - xshift - FRightMargin, dli.Top + 5 - yshift);
+        canv.MoveTo(Item.Left + 5 - xshift, Item.Top + 5 - yshift);
+        canv.LineTo(XSize - 5 - xshift - FRightMargin, Item.Top + 5 - yshift);
       end;
       { controls ignored }
+
     end;
     Canvas.Draw(Canvas.ClipRect.Left, Canvas.ClipRect.Top, buffer);
   finally
@@ -1738,9 +1673,9 @@ begin
   else
   begin
     id := no;
-    for i := 0 to Jumps.Count - 1 do
+    for i := 0 to FJumpList.Count - 1 do
     begin
-      JumpInfo := Jumps[i];
+      JumpInfo := FJumpList[i];
       if id = JumpInfo.id then
       begin
         r.Left := JumpInfo.l - Hpos - 5;
@@ -1786,6 +1721,9 @@ begin
 
   inherited MouseMove(Shift, X, Y);
 
+  XMouse := x;
+  YMouse := y;
+
   if Selection then
   begin
     XMouse := x;
@@ -1797,15 +1735,16 @@ begin
       ys := ClientHeight;
     no := 0;
     offs := 0;
-    FindItemForSel(X + HPos, ys + VPos * SmallStep, no, offs);
+    //FindVisItemForSel(X + HPos, ys + VPos * SmallStep, no, offs);
+    FindOrigItemForSel(X + HPos, ys + VPos * SmallStep, no, offs);
     FSelEndNo := no;
     FselEndOffs := offs;
     Invalidate();
   end;
 
-  for i := 0 to jumps.Count-1 do
+  for i := 0 to FJumpList.Count-1 do
   begin
-    JumpInfo := Jumps[i];
+    JumpInfo := FJumpList[i];
     if  (X >= JumpInfo.l - HPos)
     and (X <= JumpInfo.l + JumpInfo.w - HPos)
     and (Y >= JumpInfo.t - VPos * SmallStep)
@@ -1848,10 +1787,10 @@ begin
     OnRVMouseMove(Self, -1);
   end;
 
-  if Selection then
+  //if Selection then
     Invalidate();
 end;
-{-------------------------------------}
+
 procedure TCustomRichView.MouseUp(Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
 var
   i, StyleNo, no, offs, ys: Integer;
@@ -1874,7 +1813,8 @@ begin
       ys := ClientHeight;
     no := 0;
     offs := 0;
-    FindItemForSel(XClicked + HPos, ys + VPos * SmallStep, no, offs);
+    //FindVisItemForSel(XClicked + HPos, ys + VPos * SmallStep, no, offs);
+    FindOrigItemForSel(XClicked + HPos, ys + VPos * SmallStep, no, offs);
     FSelEndNo := no;
     FselEndOffs := offs;
     Selection := False;
@@ -1904,9 +1844,9 @@ begin
     Exit;
   end;
 
-  for i:=0 to Jumps.Count-1 do
+  for i:=0 to FJumpList.Count-1 do
   begin
-    JumpInfo := Jumps[i];
+    JumpInfo := FJumpList[i];
     if (LastJumpDowned = JumpInfo.id)
     and (X >= JumpInfo.l - HPos)
     and (X <= JumpInfo.l + JumpInfo.w - HPos)
@@ -1922,7 +1862,7 @@ begin
   LastJumpDowned := -1;
   inherited MouseUp(Button, Shift, X, Y);
 end;
-{-------------------------------------}
+
 procedure TCustomRichView.MouseDown(Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
 var
   i, no, StyleNo: Integer;
@@ -1936,9 +1876,9 @@ begin
   YClicked := Y;
   //if Assigned(FOnJump) then begin
   LastJumpDowned := -1;
-  for i := 0 to jumps.Count-1 do
+  for i := 0 to FJumpList.Count-1 do
   begin
-    JumpInfo := Jumps[i];
+    JumpInfo := FJumpList[i];
     if  (X >= JumpInfo.l - HPos)
     and (X <= JumpInfo.l + JumpInfo.w - HPos)
     and (Y >= JumpInfo.t - VPos * SmallStep)
@@ -1954,7 +1894,8 @@ begin
   if AllowSelection then
   begin
     no := 0;
-    FindItemForSel(XClicked + HPos, YClicked + VPos * SmallStep, no, FSelStartOffs);
+    //FindVisItemForSel(XClicked + HPos, YClicked + VPos * SmallStep, no, FSelStartOffs);
+    FindOrigItemForSel(XClicked + HPos, YClicked + VPos * SmallStep, no, FSelStartOffs);
     FSelStartNo := no;
     FSelEndNo   := no;
     Selection   := (no <> -1);
@@ -1975,19 +1916,20 @@ begin
 
   inherited MouseDown(Button, Shift, X, Y);
 end;
-{-------------------------------------}
+
 procedure TCustomRichView.AppendFrom(Source: TCustomRichView);
 var
   i: Integer;
   gr: TGraphic;
   grclass: TGraphicClass;
-  li: TLineInfo;
+  Item: TRVItem;
+  VisItem: TRVVisualItem;
 begin
   ClearTemporal();
-  for i := 0 to Source.Lines.Count-1 do
+  for i := 0 to Source.Items.Count-1 do
   begin
-    li := Source.Lines[i];
-    case li.StyleNo of
+    Item := Source.Items[i];
+    case Item.StyleNo of
       rvsBreak:
         AddBreak();
 
@@ -1996,14 +1938,18 @@ begin
 
       rvsPicture:
       begin
-        grclass := TGraphicClass(li.gr.ClassType);
+        VisItem := (Item as TRVVisualItem);
+        grclass := TGraphicClass(VisItem.gr.ClassType);
         gr := grclass.Create();
-        gr.Assign(li.gr);
-        AddPicture(gr);
+        gr.Assign(VisItem.gr);
+        AddPicture(gr, False);
       end;
 
       rvsHotSpot:
-        AddHotSpot(li.imgNo, TImageList(li.gr), (not li.SameAsPrev));
+      begin
+        VisItem := (Item as TRVVisualItem);
+        AddHotSpot(VisItem.imgNo, TImageList(VisItem.gr), (not VisItem.SameAsPrev));
+      end;
 
       rvsComponent:
       begin
@@ -2015,23 +1961,26 @@ begin
       end;
 
       rvsBullet:
-        AddBullet(li.imgNo, TImageList(li.gr), (not li.SameAsPrev));
+      begin
+        VisItem := (Item as TRVVisualItem);
+        AddBullet(VisItem.imgNo, TImageList(VisItem.gr), (not VisItem.SameAsPrev));
+      end;
     else
-      if li.Center then
-        AddCenterLine(li.Text, li.StyleNo)
-      else if li.SameAsPrev then
-        Add(li.Text, li.StyleNo)
+      if Item.Alignment = taCenter then
+        AddCenterLine(Item.Text, Item.StyleNo)
+      else if Item.SameAsPrev then
+        Add(Item.Text, Item.StyleNo)
       else
-        AddFromNewLine(li.Text, li.StyleNo);
+        AddFromNewLine(Item.Text, Item.StyleNo);
     end;
   end;
 end;
-{-------------------------------------}
+
 function TCustomRichView.GetLastCP(): Integer;
 begin
   GetLastCP := CheckPoints.Count-1;
 end;
-{-------------------------------------}
+
 procedure TCustomRichView.SetBackBitmap(Value: TBitmap);
 begin
   FBackBitmap.Assign(Value);
@@ -2047,7 +1996,7 @@ begin
     end;
   end;
 end;
-{-------------------------------------}
+
 procedure TCustomRichView.SetBackgroundStyle(Value: TBackgroundStyle);
 begin
   FBackgroundStyle := Value;
@@ -2063,7 +2012,7 @@ begin
     end;
   end;
 end;
-{-------------------------------------}
+
 procedure TCustomRichView.DrawBack(DC: HDC; Rect: TRect; Width, Height: Integer);
 var
   i, j, iMin, iMax, jMin, jMax: Integer;
@@ -2133,7 +2082,7 @@ begin
     end
   end;
 end;
-{-------------------------------------}
+
 procedure TCustomRichView.WMEraseBkgnd(var Message: TWMEraseBkgnd);
 var
   r1: TRect;
@@ -2153,153 +2102,127 @@ begin
   OldWidth := ClientWidth;
   OldHeight := ClientHeight;
 end;
-{-------------------------------------}
+
 procedure TCustomRichView.SetVSmallStep(Value: Integer);
 begin
   if (Value <= 0) or (TextHeight div Value > 30000) then
     Exit;
   SmallStep := Value;
 end;
-{-------------------------------------}
+
 procedure TCustomRichView.ShareLinesFrom(Source: TCustomRichView);
 begin
   ShareContents := True;
   if ShareContents then
   begin
     Clear();
-    lines := Source.Lines;
+    Items := Source.Items;
   end;
 end;
-{-------------------------------------}
-function TCustomRichView.FindItemAtPos(X, Y: Integer): Integer;
+
+function TCustomRichView.FindVisItemAtPos(X, Y: Integer): Integer;
 var
   i, a, b, mid, midtop: Integer;
-  dli: TDrawLineInfo;
+  Item: TRVItem;
 begin
-  if DrawLines.Count = 0 then
+  Result := -1;
+  if FVisibleItems.Count = 0 then Exit;
+
+  a := 0;
+  b := FVisibleItems.Count-1;
+  if (FVisibleItems[b].Top + FVisibleItems[b].Height) < Y then
   begin
-    Result := -1;
+    Result := -2;
     Exit;
   end;
-
-  dli := DrawLines[0];
-  if  (dli.Top <= Y) and (dli.Top + dli.Height > Y)
-  and (dli.Left <= X) and (dli.Left + dli.Width > X) then
-  begin
-    Result := 0;
-    Exit;
-  end;
-
-  a := 1;
-  b := DrawLines.Count-1;
+    
   while (b - a) > 1 do
   begin
     mid := (a + b) div 2;
-    if (DrawLines[mid].Top <= Y) then
+    if (FVisibleItems[mid].Top <= Y) then
       a := mid
     else
       b := mid;
   end;
+  if FVisibleItems[b].Top <= Y then
+    mid := b
+  else
+    mid := a;
 
-  mid := a;
-  midtop := DrawLines[mid].Top;
-  while (mid >= 1) and (DrawLines[mid-1].Top + DrawLines[mid-1].Height > midtop) do
+  midtop := FVisibleItems[mid].Top;
+  while (mid >= 1) and (FVisibleItems[mid-1].Top + FVisibleItems[mid-1].Height > midtop) do
     Dec(mid);
 
-  for i:=1 to 2 do
+  Item := FVisibleItems[mid];
+  midtop := Item.Top + Item.Height-1;
+  while (mid < FVisibleItems.Count) do
   begin
-    if mid = DrawLines.Count then
+    Item := FVisibleItems[mid];
+    if (Item.Top > midtop) then
       Break;
-
-    dli := DrawLines[mid];
-    midtop := dli.Top + dli.Height-1;
-    while (mid < DrawLines.Count) do
+    if (Item.Top <= Y) and (Item.Top + Item.Height > Y)
+    and (Item.Left <= X) and (Item.Left + Item.Width > X) then
     begin
-      dli := DrawLines[mid];
-      if (dli.Top > midtop) then
-        Break;
-      if (dli.Top <= Y) and (dli.Top + dli.Height > Y)
-      and (dli.Left <= X) and (dli.Left + dli.Width>X) then
-      begin
-        Result := mid;
-        Exit;
-      end;
-      Inc(mid);
+      Result := mid;
+      Exit;
     end;
+    Inc(mid);
   end;
-  Result := -1;
 end;
-  {------------------------------------------------------------------}
-procedure TCustomRichView.FindItemForSel(X, Y: Integer; var No, Offs: Integer);
+
+procedure TCustomRichView.FindVisItemForSel(X, Y: Integer; var ItemNo, TextOffs: Integer);
 var
-  styleno, i, a, b: Integer;
+  StyleNo, i, a, b: Integer;
   mid, midtop, midbottom, midleft, midright: Integer;
   beginline, endline: Integer;
-  dli, dliMid: TDrawLineInfo;
+  Item, ItemMid: TRVItem;
   {$IFNDEF RICHVIEWDEF4}
   arr: array[0..1000] of integer;
   {$ENDIF}
   sz: TSIZE;
 begin
-  if DrawLines.Count = 0 then
+  mid := FindVisItemAtPos(X, Y);
+  if mid < 0 then
   begin
-    No := -1;
+    if mid = -2 then
+    begin
+      mid := FVisibleItems.Count - 1;
+      TextOffs := Length(FVisibleItems[mid].Text)+1;
+    end;
+    ItemNo := mid;
     Exit;
   end;
 
-  dli := DrawLines[0];
-  if {(dli.Top <= Y) and }(dli.Top + dli.Height > Y) {and
-     (dli.Left <= X) and (dli.Left + dli.Width > X)} then
-  begin
-    mid := 0
-  end
-  else
-  begin
-    a := 1;
-    b := DrawLines.Count-1;
-    while (b - a) > 1 do
-    begin
-      mid := (a + b) div 2;
-      if (DrawLines[mid].Top <= Y) then
-        a := mid
-      else
-        b := mid;
-    end;
-    mid := a;
-    if DrawLines[b].Top <= Y then
-      mid := b;
-  end;
-
-  dliMid := DrawLines[mid];
-  midtop := dliMid.Top;
-  midbottom := midtop + dliMid.Height;
+  ItemMid := FVisibleItems[mid];
+  midtop := ItemMid.Top;
+  midbottom := midtop + ItemMid.Height;
 
   // searching beginning of line "mid" belong to
   beginline := mid;
   while (beginline >= 1)
-  and (DrawLines[beginline-1].Top + DrawLines[beginline-1].Height > midtop) do
+  and (FVisibleItems[beginline-1].Top + FVisibleItems[beginline-1].Height > midtop) do
     Dec(beginline);
 
   // searching end of line "mid" belong to
   endline := mid;
-  while (endline < DrawLines.Count-1)
-  and (DrawLines[endline+1].Top < midbottom) do
+  while (endline < FVisibleItems.Count-1)
+  and (FVisibleItems[endline+1].Top < midbottom) do
     Inc(endline);
 
   // calculating line bounds
-  midleft := dliMid.Left;
-  midright := midleft + dliMid.Width;
+  midleft := ItemMid.Left;
+  midright := midleft + ItemMid.Width;
   for i := beginline to endline do
   begin
-    dli := DrawLines[i];
-    if dli.Top < midtop then
-      midtop := dli.Top;
-    if dli.Top + dli.Height > midbottom then
-      midbottom := dli.Top + dli.Height;
-    if dli.Left < midleft then
-      midleft := dli.Left;
-    if dli.Left + dli.Width > midright then
-      midright := dli.Left + dli.Width;
+    Item := FVisibleItems[i];
+    if Item.Top < midtop then
+      midtop := Item.Top;
+    if Item.Top + Item.Height > midbottom then
+      midbottom := Item.Top + Item.Height;
+    if Item.Left < midleft then
+      midleft := Item.Left;
+    if Item.Left + Item.Width > midright then
+      midright := Item.Left + Item.Width;
   end;
   if (Y < midtop) or (X < midleft) then
   begin
@@ -2317,40 +2240,40 @@ begin
      end;
      exit;
   }
-    No := beginline;
-    if Lines[DrawLines[No].LineNo].StyleNo < 0 then
-      Offs := 0
+    ItemNo := beginline;
+    if FVisibleItems[ItemNo].StyleNo < 0 then
+      TextOffs := 0
     else
-      Offs := 1;
+      TextOffs := 1;
     Exit;
   end;
 
   if (Y > midbottom) or (X > midright) then
   begin
-    No := endline + 1;
-    Offs := 1;
-    if No >= DrawLines.Count then
+    ItemNo := endline + 1;
+    TextOffs := 1;
+    if ItemNo >= FVisibleItems.Count then
     begin
-      No := DrawLines.Count-1;
-      Offs := Length(DrawLines[No].Text)+1;
+      ItemNo := FVisibleItems.Count-1;
+      TextOffs := Length(FVisibleItems[ItemNo].Text)+1;
     end
     else
     begin
-      if Lines[DrawLines[No].LineNo].StyleNo < 0 then
-        Offs := 0;
+      if FVisibleItems[ItemNo].StyleNo < 0 then
+        TextOffs := 0;
     end;
     Exit;
   end;
 
   for i := beginline to endline do
   begin
-    dli := DrawLines[i];
-    if (dli.Left <= X) and (dli.Left + dli.Width >= X) then
+    Item := FVisibleItems[i];
+    if (Item.Left <= X) and (Item.Left + Item.Width >= X) then
     begin
-      styleno := Lines[dli.LineNo].StyleNo;
-      No := i;
-      Offs := 0;
-      if styleno >= 0 then
+      StyleNo := Item.StyleNo;
+      ItemNo := i;
+      TextOffs := 0;
+      if StyleNo >= 0 then
       begin
         with FStyle.TextStyles[StyleNo] do
         begin
@@ -2364,33 +2287,57 @@ begin
         sz.cx := 0;
         sz.cy := 0;
         {$IFDEF FPC}
-        MyGetTextExtentExPoint(Canvas.Handle, PChar(dli.Text), Length(dli.Text),
+        MyGetTextExtentExPoint(Canvas.Handle, PChar(Item.Text), Length(Item.Text),
         {$ELSE}
-        GetTextExtentExPoint(Canvas.Handle, PChar(dli.Text), Length(dli.Text),
+        GetTextExtentExPoint(Canvas.Handle, PChar(Item.Text), Length(Item.Text),
         {$ENDIF}
-                            X-dli.Left,
+                            X-Item.Left,
                             {$IFDEF RICHVIEWDEF4}
-                            @Offs, nil,
+                            @TextOffs, nil,
                             {$ELSE}
-                            Offs, arr[0],
+                            TextOffs, arr[0],
                             {$ENDIF}
                              sz);
-        Inc(Offs);
-        if Offs > Length(dli.Text) then
-          Offs := Length(dli.Text);
-        if (Offs < 1) and (Length(dli.Text) > 0) then
-          Offs := 1;
+        Inc(TextOffs);
+        if TextOffs > Length(Item.Text) then
+          TextOffs := Length(Item.Text);
+        if (TextOffs < 1) and (Length(Item.Text) > 0) then
+          TextOffs := 1;
       end
       else
-        Offs := 1;
+        TextOffs := 1;
     end;
   end;
 end;
+
+procedure TCustomRichView.FindOrigItemForSel(X, Y: Integer; var ItemNo, TextOffs: Integer);
+var
+  Item: TRVItem;
+  n, offs: Integer;
+begin
+  FindVisItemForSel(X, Y, n, offs);
+  if (n >= 0) and (n < FVisibleItems.Count) then
+  begin
+    Item := FVisibleItems[n];
+    if Item.IsSubItem then
+      ItemNo := Items.IndexOf(Item.ParentItem)
+    else
+      ItemNo := Items.IndexOf(Item);
+
+    TextOffs := Item.TextOffs - 1 + offs;
+  end
+  else
+  begin
+    ItemNo := -1;
+    TextOffs := 0;
+  end;
+end;
+
 {------------------------------------------------------------------}
 function TCustomRichView.FindClickedWord(var sClickedWord: String;
   var StyleNo: Integer): Boolean;
 var
-  no, lno: Integer;
+  no: Integer;
   {$IFNDEF RICHVIEWDEF4}
   arr: array[0..1000] of integer;
   {$ENDIF}
@@ -2398,13 +2345,12 @@ var
   max, first, len: Integer;
 begin
   Result := False;
-  no := FindItemAtPos(XClicked + HPos, YClicked + VPos * SmallStep);
+  no := FindVisItemAtPos(XClicked + HPos, YClicked + VPos * SmallStep);
   if no <> -1 then
   begin
-    lno := DrawLines[no].LineNo;
-    sClickedWord := DrawLines[no].Text;
-    styleno := Lines[lno].StyleNo;
-    if styleno >= 0 then
+    sClickedWord := FVisibleItems[no].Text;
+    StyleNo := FVisibleItems[no].StyleNo;
+    if StyleNo >= 0 then
     begin
       with FStyle.TextStyles[StyleNo] do
       begin
@@ -2422,7 +2368,7 @@ begin
       {$ELSE}
       GetTextExtentExPoint(Canvas.Handle, PChar(sClickedWord), Length(sClickedWord),
       {$ENDIF}
-                          XClicked + HPos - DrawLines[no].Left,
+                          XClicked + HPos - FVisibleItems[no].Left,
                           {$IFDEF RICHVIEWDEF4}
                           @max, nil,
                           {$ELSE}
@@ -2476,63 +2422,68 @@ begin
   begin
     if CheckPoints[i].Text = ACheckPointName then
     begin
-      startno := CheckPoints[i].LineNo;
-      endno := Lines.Count-1;
+      startno := CheckPoints[i].ItemIndex;
+      endno := Items.Count-1;
       for j := i+1 to CheckPoints.Count-1 do
       begin
         if CheckPoints[j].Text <> '' then
         begin
-          endno := CheckPoints[j].LineNo-1;
+          endno := CheckPoints[j].ItemIndex-1;
           Break;
         end;
       end;
-      DeleteLines(startno, endno-startno+1);
+      DeleteItems(startno, endno-startno+1);
       Exit;
     end;
   end;
 end;
   {------------------------------------------------------------------}
-procedure TCustomRichView.DeleteLines(FirstLine, Count: Integer);
+procedure TCustomRichView.DeleteItems(AFirstIndex, ACount: Integer);
 var
-  i: Integer;
-  LineInfo: TLineInfo;
+  i, LastIndex: Integer;
+  Item: TRVItem;
+  VisItem: TRVVisualItem;
 begin
   if ShareContents then
     Exit;
-  if FirstLine >= lines.Count then
+  if AFirstIndex >= Items.Count then
     Exit;
 
   Deselect();
-  if FirstLine + Count > lines.Count then
-    Count := lines.Count - firstline;
+  if AFirstIndex + ACount > Items.Count then
+    ACount := Items.Count - AFirstIndex;
 
-  for i := FirstLine to FirstLine+Count-1 do
+  LastIndex := AFirstIndex + ACount - 1;
+  if LastIndex > Items.Count then
+    LastIndex := Items.Count-1;
+
+  for i := LastIndex downto AFirstIndex do
   begin
-    LineInfo := Lines[i];
-    if LineInfo.StyleNo = rvsPicture then { image}
+    Item := Items[i];
+    FVisibleItems.RemoveItem(Item);
+
+    if Item.StyleNo = rvsPicture then { image}
     begin
-      if not LineInfo.Shared then
-        LineInfo.gr.Free();
-      LineInfo.gr := nil;
+      VisItem := (Item as TRVVisualItem);
+      if not VisItem.Shared then
+        VisItem.gr.Free();
+      VisItem.gr := nil;
     end;
 
-    if LineInfo.StyleNo = rvsComponent then {control}
+    if Item.StyleNo = rvsComponent then {control}
     begin
-      RemoveControl(TControl(LineInfo.gr));
-      if not LineInfo.Shared then
-        LineInfo.gr.Free();
-      LineInfo.gr := nil;
+      VisItem := (Item as TRVVisualItem);
+      RemoveControl(TControl(VisItem.gr));
+      if not VisItem.Shared then
+        VisItem.gr.Free();
+      VisItem.gr := nil;
     end;
 
-    //LineInfo.Free;
-    //LineInfo := nil;
+    Items.Delete(i);
   end;
-  for i := 1 to Count do
-    lines.Delete(FirstLine);
-
 end;
-  {------------------------------------------------------------------}
-procedure TCustomRichView.GetSelBounds(out StartNo, EndNo, StartOffs, EndOffs: Integer);
+{
+procedure TCustomRichView.GetVisibleSelBounds(out StartNo, EndNo, StartOffs, EndOffs: Integer);
 begin
   if FSelStartNo <= FSelEndNo then
   begin
@@ -2556,100 +2507,182 @@ begin
     StartOffs := FSelEndOffs;
     EndOffs   := FSelStartOffs;
   end;
+  if EndNo >= FVisibleItems.Count then
+    EndNo := FVisibleItems.Count-1;
 end;
-{------------------------------------------------------------------}
-procedure TCustomRichView.StoreSelBounds(var StartNo, EndNo, StartOffs, EndOffs: Integer);
+}
+procedure TCustomRichView.GetVisibleSelBounds(out StartNo, EndNo, StartOffs, EndOffs: Integer);
 var
-  dli: TDrawLineInfo;
+  Item, SelStartItem, SelEndItem: TRVItem;
+  i, n, offs: Integer;
 begin
-  GetSelBounds(StartNo, EndNo, StartOffs, EndOffs);
+  if FSelStartNo <= FSelEndNo then
+  begin
+    StartNo := FSelStartNo;
+    EndNo   := FSelEndNo;
+    if not ((StartNo = EndNo) and (FSelStartOffs > FSelEndOffs)) then
+    begin
+      StartOffs := FSelStartOffs;
+      EndOffs   := FSelEndOffs;
+    end
+    else
+    begin
+      StartOffs := FSelEndOffs;
+      EndOffs   := FSelStartOffs;
+    end;
+  end
+  else
+  begin
+    StartNo   := FSelEndNo;
+    EndNo     := FSelStartNo;
+    StartOffs := FSelEndOffs;
+    EndOffs   := FSelStartOffs;
+  end;
+  if StartNo >= Items.Count then
+    StartNo := Items.Count-1;
+  if EndNo >= Items.Count then
+    EndNo := Items.Count-1;
+
+  if (StartNo <> -1) and (EndNo <> -1) then
+  begin
+    SelStartItem := Items[StartNo];
+    SelEndItem := Items[EndNo];
+    // Start
+    n := StartNo;
+    for i := StartNo to FVisibleItems.Count-1 do
+    begin
+      Item := FVisibleItems[i];
+      if (Item = SelStartItem) or (Item.ParentItem = SelStartItem) then
+      begin
+        n := i;
+        Break;
+      end;
+    end;
+    StartNo := n;
+    offs := StartOffs;
+    while n < FVisibleItems.Count do
+    begin
+      Item := FVisibleItems[n];
+      if Item.IsSubItem then
+      begin
+        if Item.TextOffs < offs then
+        begin
+          StartOffs := (offs - Item.TextOffs) + 1;
+          StartNo := n;
+        end
+        else
+          Break;
+      end
+      else
+        Break;
+      Inc(n);
+    end;
+
+    // End
+    n := EndNo;
+    for i := EndNo to FVisibleItems.Count-1 do
+    begin
+      Item := FVisibleItems[i];
+      if (Item = SelEndItem) or (Item.ParentItem = SelEndItem) then
+      begin
+        n := i;
+        Break;
+      end;
+    end;
+    EndNo := n;
+    offs := EndOffs;
+    while n < FVisibleItems.Count do
+    begin
+      Item := FVisibleItems[n];
+      if Item.IsSubItem then
+      begin
+        if Item.TextOffs < offs then
+        begin
+          EndOffs := (offs - Item.TextOffs) + 1;
+          EndNo := n;
+        end
+        else
+          Break;
+      end
+      else
+        Break;
+      Inc(n);
+    end;
+  end;
+end;
+
+procedure TCustomRichView.GetItemsSelBounds(var StartNo, EndNo, StartOffs, EndOffs: Integer);
+var
+  Item: TRVItem;
+  //n: Integer;
+begin
+  GetVisibleSelBounds(StartNo, EndNo, StartOffs, EndOffs);
   if StartNo <> -1 then
   begin
-    dli := DrawLines[StartNo];
-    if Lines[dli.LineNo].StyleNo >= 0 then
-      Inc(StartOffs, dli.Offs-1);
-    StartNo := dli.LineNo;
-    dli := DrawLines[EndNo];
-    if Lines[dli.LineNo].StyleNo >= 0 then
-      Inc(EndOffs, dli.Offs-1);
-    EndNo := dli.LineNo;
+    Item := FVisibleItems[StartNo];
+    if Item.StyleNo >= 0 then
+      Inc(StartOffs, Item.TextOffs-1);
+    // find parent item
+    if Item.IsSubItem then
+      StartNo := Items.IndexOf(Item.ParentItem)
+    else
+      StartNo := Items.IndexOf(Item);
+
+    Item := FVisibleItems[EndNo];
+    if Item.StyleNo >= 0 then
+      Inc(EndOffs, Item.TextOffs-1);
+    // find parent item
+    if Item.IsSubItem then
+      EndNo := Items.IndexOf(Item.ParentItem)
+    else
+      EndNo := Items.IndexOf(Item);
   end;
 end;
 {------------------------------------------------------------------}
-procedure TCustomRichView.RestoreSelBounds(StartNo, EndNo, StartOffs, EndOffs: Integer);
+procedure TCustomRichView.SetItemsSelBounds(StartNo, EndNo, StartOffs, EndOffs: Integer);
 var
   i: Integer;
-  dli, dli2, dli3: TDrawLineInfo;
+  Item: TRVItem;
+  ItemStart, ItemEnd: TRVItem;
 begin
   if StartNo = -1 then
     Exit;
-  for i :=0 to DrawLines.Count-1 do
+  ItemStart := Items[StartNo];
+  ItemEnd := Items[EndNo];
+  for i := 0 to FVisibleItems.Count-1 do
   begin
-    dli := DrawLines[i];
-    if dli.LineNo = StartNo then
+    Item := FVisibleItems[i];
+    if (Item = ItemStart) or (Item.ParentItem = ItemStart) then
     begin
-      if Lines[dli.LineNo].StyleNo < 0 then
+      if Item.StyleNo < 0 then
       begin
         FSelStartNo := i;
         FSelStartOffs := StartOffs;
       end
       else
       begin
-        if i <> DrawLines.Count-1 then
-          dli2 := DrawLines[i+1]
-        else
-          dli2 := nil;
-
-        if i <> 0 then
-          dli3 := DrawLines[i-1]
-        else
-          dli3 := nil;
-
-        if ((dli.Offs <= StartOffs) and (Length(dli.Text) + dli.Offs > StartOffs))
-        or ((StartOffs > Length(Lines[dli.LineNo].Text)) and ((dli2 = nil) or (dli2.LineNo <> dli.LineNo)))
-        or ((dli.Offs > StartOffs) and ((dli3 = nil) or (dli3.LineNo <> dli.LineNo)))
-        then
+        if (Item.TextOffs <= StartOffs) then
         begin
           FSelStartNo := i;
-          FSelStartOffs := StartOffs - dli.Offs + 1;
-          if FSelStartOffs < 0 then
-            FSelStartOffs := 0;
-          if FSelStartOffs > dli.Offs + Length(dli.Text) then
-            FSelStartOffs := dli.Offs + Length(dli.Text);
+          FSelStartOffs := StartOffs;
         end;
       end;
     end;
 
-    if dli.LineNo = EndNo then
+    if (Item = ItemEnd) or (Item.ParentItem = ItemEnd) then
     begin
-      if Lines[dli.LineNo].StyleNo < 0 then
+      if Item.StyleNo < 0 then
       begin
         FSelEndNo := i;
         FSelEndOffs := EndOffs;
       end
       else
       begin
-        if i <> DrawLines.Count-1 then
-          dli2 := DrawLines[i+1]
-        else
-          dli2 := nil;
-
-        if i <> 0 then
-          dli3 := DrawLines[i-1]
-        else
-          dli3 := nil;
-
-        if ((dli.Offs <= EndOffs) and (Length(dli.Text) + dli.Offs > EndOffs))
-        or ((EndOffs > Length(Lines[dli.LineNo].Text)) and ((dli2 = nil)or(dli2.LineNo <> dli.LineNo)))
-        or ((dli.Offs > EndOffs) and ((dli3 = nil)or(dli3.LineNo <> dli.LineNo)))
+        if ((Item.TextOffs <= EndOffs) and (Length(Item.Text) + Item.TextOffs > EndOffs))
         then
         begin
           FSelEndNo := i;
-          FSelEndOffs := EndOffs - dli.Offs + 1;
-          if FSelEndOffs < 0 then
-            FSelEndOffs := 0;
-          if FSelEndOffs > dli.Offs + Length(dli.Text) then
-            FSelEndOffs := dli.Offs + Length(dli.Text);
+          FSelEndOffs := EndOffs;
         end;
       end;
     end;
@@ -2658,14 +2691,14 @@ end;
   {------------------------------------------------------------------}
 function TCustomRichView.GetLineCount(): Integer;
 begin
-  Result := lines.Count;
+  Result := Items.Count;
 end;
   {------------------------------------------------------------------}
 function TCustomRichView.SelectionExists(): Boolean;
 var
   StartNo, EndNo, StartOffs, EndOffs: Integer;
 begin
-  GetSelBounds(StartNo, EndNo, StartOffs, EndOffs);
+  GetVisibleSelBounds(StartNo, EndNo, StartOffs, EndOffs);
   if (StartNo = -1) or (EndNo = -1) or ((StartNo = EndNo) and (StartOffs = EndOffs)) then
     Result := False
   else
@@ -2675,8 +2708,8 @@ end;
 function TCustomRichView.GetSelText(): string;
 var
   StartNo, EndNo, StartOffs, EndOffs, i: Integer;
-  s : string;
-  li : TLineInfo;
+  s: string;
+  Item: TRVItem;
 begin
   Result := '';
   if not SelectionExists then
@@ -2687,34 +2720,34 @@ begin
   EndNo := 0;
   StartOffs := 0;
   EndOffs := 0;
-  StoreSelBounds(StartNo, EndNo, StartOffs, EndOffs);
+  GetItemsSelBounds(StartNo, EndNo, StartOffs, EndOffs);
   if StartNo = EndNo then
   begin
-    li := Lines[StartNo];
-    if li.StyleNo < 0 then
+    Item := Items[StartNo];
+    if Item.StyleNo < 0 then
       Exit;
-    Result := Copy(li.Text, StartOffs, EndOffs-StartOffs);
+    Result := Copy(Item.Text, StartOffs, EndOffs-StartOffs);
     Exit;
   end
   else
   begin
-    li := Lines[StartNo];
-    if li.StyleNo < 0 then
+    Item := Items[StartNo];
+    if Item.StyleNo < 0 then
       s := ''
     else
-      s := Copy(li.Text, StartOffs, Length(li.Text));
+      s := Copy(Item.Text, StartOffs, Length(Item.Text));
 
     for i := StartNo + 1 to EndNo do
     begin
-      li := Lines[i];
-      if (li.StyleNo <> rvsCheckpoint) and (not li.SameAsPrev) then
-        s := s + chr(13);
-      if li.StyleNo >= 0 then
+      Item := Items[i];
+      if (Item.StyleNo <> rvsCheckpoint) and (not Item.SameAsPrev) then
+        s := s + sLineBreak;
+      if Item.StyleNo >= 0 then
       begin
         if i <> EndNo then
-          s := s + li.Text
+          s := s + Item.Text
         else
-          s := s + Copy(li.Text, 1, EndOffs-1);
+          s := s + Copy(Item.Text, 1, EndOffs-1);
       end;
     end;
     {$IFDEF FPC}
@@ -2778,6 +2811,39 @@ end;
 function TCustomRichView.GetCredits(): string;
 begin
   Result := 'Lazarus TRichView based on RichView v0.5.1 (www.TCustomRichView.com)';
+end;
+
+function TCustomRichView.GetDebugInfo(): string;
+var
+  VisItemId, VisPos: Integer;
+  ItemId, TextPos: Integer;
+  StartNo, EndNo, StartOffs, EndOffs: Integer;
+  Item: TRVItem;
+begin
+  FindVisItemForSel(XMouse, YMouse, VisItemId, VisPos);
+
+  FindOrigItemForSel(XMouse, YMouse, ItemId, TextPos);
+
+  GetVisibleSelBounds(StartNo, EndNo, StartOffs, EndOffs);
+  Result := 'Items.Count: '+IntToStr(Items.Count) + sLineBreak
+  + 'FVItems.Count: ' + IntToStr(FVisibleItems.Count) + sLineBreak
+  + 'MouseXY: '+ IntToStr(XMouse) + '.' + IntToStr(YMouse) + sLineBreak
+  + 'VisItem(Id/Pos): '+ IntToStr(VisItemId) + '/' + IntToStr(VisPos) + sLineBreak
+  + 'VisSelBounds: ' + IntToStr(StartNo) + '.' + IntToStr(StartOffs)
+  + ' - ' + IntToStr(EndNo) + '.' + IntToStr(EndOffs) + sLineBreak
+  + 'OrigSelBounds: ' + IntToStr(FSelStartNo) + '.' + IntToStr(FSelStartOffs)
+  + ' - ' + IntToStr(FSelEndNo) + '.' + IntToStr(FSelEndOffs) + sLineBreak;
+  if (VisItemId >= 0) and (VisItemId < FVisibleItems.Count) then
+  begin
+    Item := FVisibleItems[VisItemId];
+    Result := Result + 'VisItem: X=' + IntToStr(Item.Left) + ' Y=' + IntToStr(Item.Top)
+    + ' Offs=' + IntToStr(Item.TextOffs) + sLineBreak;
+
+    Result := Result + 'Item ID/Pos:' + IntToStr(ItemId) + '/' + IntToStr(TextPos);
+    Item := Items[ItemId];
+    Result := Result + ' X=' + IntToStr(Item.Left) + ' Y=' + IntToStr(Item.Top)
+    + ' Offs=' + IntToStr(Item.TextOffs) + sLineBreak;
+  end;
 end;
 
 {------------------------------------------------------------------}
