@@ -240,7 +240,7 @@ begin
 
           rvsPicture:
           begin
-            if (Item.Alignment <> taCenter) and (not Item.SameAsPrev) then
+            if (Item.Alignment <> taCenter) and Item.FromNewLine then
               WriteLn(f,'<BR>');
             if Item.Alignment = taCenter then
               Write(f,'<CENTER>');
@@ -253,7 +253,7 @@ begin
           rvsBullet, rvsHotSpot:
           begin
             VisItem := (Item as TRVVisualItem);
-            if (not Item.SameAsPrev) and needbr then
+            if Item.FromNewLine and needbr then
               WriteLn(f,'<BR>');
             fn := '';
             for j := 0 to Bullets.Count-1 do
@@ -302,7 +302,7 @@ begin
 
           rvsJump1, rvsJump2:
           begin
-            if (Item.Alignment <> taCenter) and (not Item.SameAsPrev) and needbr then
+            if (Item.Alignment <> taCenter) and Item.FromNewLine and needbr then
               WriteLn(f,'<BR>');
             if (Item.Alignment = taCenter) then
               Write(f,'<CENTER>');
@@ -322,7 +322,7 @@ begin
 
           rvsNormal:
           begin
-            if (Item.Alignment <> taCenter) and (not Item.SameAsPrev) and needbr then
+            if (Item.Alignment <> taCenter) and Item.FromNewLine and needbr then
               WriteLn(f, '<BR>');
             if (Item.Alignment = taCenter) then
               Write(f, '<CENTER>' + MakeHTMLStr(Item.Text) + '</CENTER>')
@@ -333,7 +333,7 @@ begin
 
         else
           begin
-            if (Item.Alignment <> taCenter) and (not Item.SameAsPrev) and needbr then
+            if (Item.Alignment <> taCenter) and Item.FromNewLine and needbr then
               WriteLn(f, '<BR>');
             if (Item.Alignment = taCenter) then
               Write(f, '<CENTER>');
@@ -393,7 +393,7 @@ begin
 
           rvsComponent:
           begin
-            if (not Item.SameAsPrev) then
+            if Item.FromNewLine then
               WriteLn(f);
             if Assigned(FOnSaveComponentToFile) then
             begin
@@ -405,11 +405,11 @@ begin
           end;
 
           rvsPicture, rvsHotSpot, rvsBullet:
-          if (not Item.SameAsPrev) then
+          if Item.FromNewLine then
             WriteLn(f);
           else
           begin
-            if (not Item.SameAsPrev) then
+            if Item.FromNewLine then
               WriteLn(f);
             if (Item.Alignment = taCenter) then
             begin

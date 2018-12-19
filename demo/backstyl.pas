@@ -31,7 +31,7 @@ uses Unit1, RichView;
 
 procedure TfrmBackStyle.btnOkClick(Sender: TObject);
 begin
- Form1.RichView1.BackgroundStyle := TBackgroundStyle(RadioGroup1.ItemIndex);
+ Form1.RichView1.BackgroundStyle := TRVBackgroundStyle(RadioGroup1.ItemIndex);
 end;
 
 initialization

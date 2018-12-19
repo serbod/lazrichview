@@ -334,7 +334,7 @@ begin
 
   PagesList.Clear();
   FormatPages := 0;
-  if FVisibleItems.Count = 0 then
+  if VisItems.Count = 0 then
     Exit;
   nPages := 1;
   rvpi := TRVPageInfo(PagesList.Add());
@@ -343,16 +343,16 @@ begin
   StartY := 0;
   i := 0;
   if Assigned(FOnFormatting) then FOnFormatting(Self, 0, rvpsProceeding);
-  while i < FVisibleItems.Count do
+  while i < VisItems.Count do
   begin
-    Item := FVisibleItems[i];
+    Item := VisItems[i];
     if Item.Top + Item.Height > StartY + Height then
     begin { i-th item does not fit in page }
       nextnewline := i;
       { searching first item in first last in new page }
       for j:=i downto 0 do
       begin
-        Item2 := FVisibleItems[j];
+        Item2 := VisItems[j];
         if (j <> i) and (Item2.Top + Item2.Height <= Item.Top) then
           Break;
 
@@ -362,14 +362,14 @@ begin
       if nextnewline = TRVPageInfo(PagesList.Items[nPages-1]).StartLineNo then
         Inc(nextnewline);
 
-      if nextnewline <> FVisibleItems.Count then
+      if nextnewline <> VisItems.Count then
       begin
         { searching min y of first line in new page }
-        Item2 := FVisibleItems[nextnewline];
+        Item2 := VisItems[nextnewline];
         StartY := Item2.Top;
-        for j := nextnewline + 1 to FVisibleItems.Count - 1 do
+        for j := nextnewline + 1 to VisItems.Count - 1 do
         begin
-          Item3 := FVisibleItems[j];
+          Item3 := VisItems[j];
           if (Item3.Top >= Item2.Top + Item2.Height) then
             Break;
           if Item3.Top < StartY then
@@ -466,7 +466,7 @@ begin
 
   first := TRVPageInfo(PagesList.Items[pgNo-1]).StartLineNo;
   if pgNo = PagesList.Count then
-    last := FVisibleItems.Count-1
+    last := VisItems.Count-1
   else
     last := TRVPageInfo(PagesList.Items[pgNo]).StartLineNo-1;
 
@@ -510,7 +510,7 @@ begin
   try
     for i := first to last do
     begin
-      Item := FVisibleItems[i];
+      Item := VisItems[i];
       no := Item.StyleNo;
       if no >= 0 then { text }
       begin

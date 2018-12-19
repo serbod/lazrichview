@@ -19,31 +19,34 @@ type
     Top: Integer;
     Width: Integer;
     Height: Integer;
-    ParentItem: TRVItem;
-    IsSubItem: Boolean;
-    // text item
+    ItemIndex: Integer;     // index in Items[]
     StyleNo: Integer;
+    // text item
     JumpId: Integer;
-    SameAsPrev: Boolean;
     Alignment: TAlignment;
-    //LineNo: Integer;
-    TextOffs: Integer;
+    TextOffs: Integer;      // text part offset, for subitems. In original item always 1
+    IsSubItem: Boolean;     // item in VisItems only, parent is ItemIndex
     FromNewLine: Boolean;
     Text: string;
   end;
 
   TRVItemList = class(TList)
   protected
+    FSubItemCount: Integer;
     procedure Notify(Ptr: Pointer; Action: TListNotification); override;
   public
-    { when item deleted, free only items with IsSubItem=True }
-    OwnSubitems: Boolean;
+    { free item when item deleted }
+    OwnItems: Boolean;
+    constructor Create(AOwnItems: Boolean);
     function GetItem(Index: Integer): TRVItem;
     property Items[Index: Integer]: TRVItem read GetItem; default;
-    { Remove temporary subitems }
+    { Add item to list. If SubItemCount less than Count, return last subitem }
+    function AddSubItem(): TRVItem;
+    { Do not actually delete items, only reset SubItemCount }
     procedure ClearSubitems();
     { Remove item and following subitems }
     procedure RemoveItem(AItem: TRVItem);
+    property SubItemCount: Integer read FSubItemCount;
   end;
 
   {------------------------------------------------------------------}
@@ -125,15 +128,36 @@ end;
 
 { TRVItemList }
 
-procedure TRVItemList.ClearSubitems();
-var
-  i: Integer;
+function TRVItemList.AddSubItem(): TRVItem;
 begin
-  for i := Count - 1 downto 0 do
+  if FSubItemCount < Count then
   begin
-    if Items[i].IsSubItem then
-      Delete(i);
+    Result := Items[FSubItemCount];
+    {Result.Left := 0;
+    Result.Top := 0;
+    Result.Width := 0;
+    Result.Height := 0;
+    Result.ItemIndex := 0;
+    Result.Text := '';  }
+  end
+  else
+  begin
+    Result := TRVItem.Create();
+    Add(Result);
   end;
+  Inc(FSubItemCount);
+end;
+
+procedure TRVItemList.ClearSubitems();
+begin
+  FSubItemCount := 0;
+end;
+
+constructor TRVItemList.Create(AOwnItems: Boolean);
+begin
+  inherited Create();
+  OwnItems := AOwnItems;
+  FSubItemCount := 0;
 end;
 
 function TRVItemList.GetItem(Index: Integer): TRVItem;
@@ -144,7 +168,7 @@ end;
 procedure TRVItemList.Notify(Ptr: Pointer; Action: TListNotification);
 begin
   inherited;
-  if (Action = lnDeleted) and ((not OwnSubitems) or (TRVItem(Ptr).IsSubItem)) then
+  if (Action = lnDeleted) and OwnItems then
     TRVItem(Ptr).Free();
 end;
 
