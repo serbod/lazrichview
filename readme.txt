@@ -26,21 +26,3 @@ Installation
     * Open lazrichview.lpk with Component/Open package file (.lpk)
     * Click on Compile
     * Click on Install
-
-
-Change Log
-
-    * 30.12.05 - First Release (v0.5.2.1)
-    * 08.09.06 - Fixes and portability (v0.5.2.2)
-               - Removed Windows dependency.
-               - Fixed text selection highlight.
-               - Fixed text position.
-               - Added component palette icons.
-               - Fixed mouse cursor disappear when hovering links.
-               - Added Printer4Lazarus requeriment.
-               - Added demo
-	       - Fixed flicker
-	       - Fixed Scrolling in linux
-               - etc.
-    * 01.06.17 - Fixed printer properties
-               - Improved performance
