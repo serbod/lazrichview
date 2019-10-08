@@ -15,9 +15,17 @@
       </SearchPaths>
       <Parsing>
         <SyntaxOptions>
+          <IncludeAssertionCode Value="True"/>
           <UseAnsiStrings Value="False"/>
         </SyntaxOptions>
       </Parsing>
+      <CodeGeneration>
+        <Checks>
+          <RangeChecks Value="True"/>
+          <OverflowChecks Value="True"/>
+          <StackChecks Value="True"/>
+        </Checks>
+      </CodeGeneration>
       <Linking>
         <Debugging>
           <UseExternalDbgSyms Value="True"/>
@@ -28,7 +36,7 @@
 It can be printed and saved as plain text or html file.
 "/>
     <License Value="The MIT License (MIT)"/>
-    <Version Minor="5" Release="4"/>
+    <Version Minor="5" Release="5"/>
     <Files Count="7">
       <Item1>
         <Filename Value="rvfreereg.pas"/>
@@ -78,7 +86,6 @@ It can be printed and saved as plain text or html file.
     <PublishOptions>
       <Version Value="2"/>
       <DestinationDirectory Value="$(TestDir)\publishedpackage\"/>
-      <IgnoreBinaries Value="False"/>
     </PublishOptions>
   </Package>
 </CONFIG>

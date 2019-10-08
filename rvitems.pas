@@ -96,6 +96,13 @@ type
     property Items[Index: Integer]: TJumpInfo read GetItem; default;
   end;
 
+  TRVTableColInfo = class
+  public
+    TableItemId: Integer;
+    ColNum: Integer;
+    l, t, w, h: Integer;
+  end;
+
 implementation
 
 { TJumpInfoList }

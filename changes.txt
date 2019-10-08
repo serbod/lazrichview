@@ -4,6 +4,11 @@ Change Log
 [-] feature removed
 [!] important change
 
+2019.10.02 (v0.5.5)
+* FormatTail() correctly append text to same line
+* fixed text lenght calculation for UTF8
++ Option for auto-scroll to bottom of appended text
+
 18.12.19 (v0.5.4)
 ! Lines property renamed to Items. Text items can have subitems - parts, that autowrapped to next line. Definitions for items moved to RVItems.pas
 + DisplayOption for clear background before paint. It cause flickering, but can be useful on some systems

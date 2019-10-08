@@ -8,7 +8,7 @@ interface
 {$I RV_Defs.inc}
 uses
   {$IFDEF FPC}
-  RVLazIntf, LCLType, LCLIntf,
+  RVLazIntf, LCLType, LCLIntf, LazUTF8,
   {$ELSE}
   Windows, Messages,
   {$ENDIF}
@@ -27,6 +27,12 @@ const
   rvsHotSpot    = -4;
   rvsComponent  = -5;
   rvsBullet     = -6;
+  rvsTab        = -7;
+  rvsTable      = -$10;
+  rvsTableRow   = -$11;
+  rvsTableCol   = -$12;
+  rvsTableCell  = -$13;
+
 type
 
   TCustomRichView = class;
@@ -55,7 +61,8 @@ type
                       rvdoEraseBackground);  // erase background before paint
   TRVDisplayOptions = set of TRVDisplayOption;
 
-  TRVOption = (rvoFastResize);               // optimizations for faster resise, take more memory
+  TRVOption = (rvoScrollToEnd,               //
+               rvoFastFormatting);           // optimizations for faster formatting, take more memory
   TRVOptions = set of TRVOption;
   {------------------------------------------------------------------}
   TScreenAndDevice = record
@@ -103,6 +110,17 @@ type
     OldWidth: Integer;
     OldHeight: Integer;
     FPrevStyleNo: Integer;
+    FTextMetr: TTextMetric;
+
+    FPrevItemId: Integer;
+    FPrevX: Integer;
+    FPrevBase: Integer;
+    FPrevBelow: Integer;
+    FPrevAbove: Integer;
+
+    FCurTableCol: Integer;
+    FCurTableRow: Integer;
+    FCurTableRowH: Integer;
 
     FSelStartNo: Integer;
     FSelEndNo: Integer;
@@ -125,11 +143,11 @@ type
     function FindVisItemAtPos(X, Y: Integer): Integer;
     { ItemNo - original item index (-1 if cursor above limits and -2 if below limits)
       TextOffs - text offset inside item }
-    procedure FindOrigItemForSel(X, Y: Integer; var ItemNo, TextOffs: Integer);
+    procedure FindOrigItemForSel(X, Y: Integer; out ItemNo, TextOffs: Integer);
     { ItemNo - visible item index
       TextOffs - text offset inside item}
-    procedure FindVisItemForSel(X, Y: Integer; var ItemNo, TextOffs: Integer);
-    function GetLineCount: Integer;
+    procedure FindVisItemForSel(X, Y: Integer; out ItemNo, TextOffs: Integer);
+    function GetItemCount(): Integer;
     procedure CMMouseLeave(var Message: TMessage); message CM_MOUSELEAVE;
     { StartNo, EndNo - visible item index
       StartOffs, EndOffs - text offset inside item }
@@ -173,10 +191,10 @@ type
     procedure MouseDown(Button: TMouseButton; Shift: TShiftState; X, Y: Integer); override;
     procedure DblClick; override;    
     procedure KeyDown(var Key: Word; Shift: TShiftState); override;
-    procedure FormatTextItem(ItemId: Integer; var x, baseline, prevdesc, prevabove: Integer; Canvas: TCanvas;
-                         var sad: TScreenAndDevice);
-    procedure FormatItem(ItemId: Integer; var x, baseline, prevdesc, prevabove: Integer; Canvas: TCanvas;
-                         var sad: TScreenAndDevice);
+    procedure FormatTextItem(ItemId: Integer; var x, baseline, prevdesc, prevabove: Integer; ACanvas: TCanvas;
+                         const sad: TScreenAndDevice);
+    procedure FormatItem(ItemId: Integer; var x, baseline, prevdesc, prevabove: Integer; ACanvas: TCanvas;
+                         const sad: TScreenAndDevice);
     procedure AdjustJumpsCoords();
     { set position for embedded controls }
     procedure AdjustChildrenCoords();
@@ -188,7 +206,7 @@ type
     function GetLastLineVisible(): Integer;
     { Option: gdlnFirstVisible, gdlnLastCompleteVisible, gdlnLastVisible }
     function GetVisibleItemIndex(BoundLine: Integer; Option: Integer): Integer;
-    procedure Format_(OnlyResized:Boolean; depth: Integer; Canvas: TCanvas; OnlyTail: Boolean);
+    procedure Format_(AOnlyResized: Boolean; ADepth: Integer; ACanvas: TCanvas; AOnlyTail: Boolean);
     procedure SetBackBitmap(Value: TBitmap);
     // draw background
     procedure DrawBack(DC: HDC; Rect: TRect; Width, Height: Integer);
@@ -285,7 +303,8 @@ type
       You can use this method for scrolling. }
     function GetJumpPointY(no: Integer): Integer;
     { Adds picture with center alignment. This method DOES NOT COPY picture from
-      argument, only makes pointer to it. Memory is released when you call method Clear()
+      argument, only makes pointer to it. if AShared=False,
+      picture memory is released when you call method Clear()
       or when control is destroyed. Do not destroy this picture yourself!
       TRichView control provides flicker-free scrolling of pictures. }
     procedure AddPicture(gr: TGraphic; AShared: Boolean = False);
@@ -299,6 +318,8 @@ type
       WARNING - These componets will be destroyed when you call method Clear()
       or when TRichView control is destroyed. Do not destroy them yourself! }
     procedure AddControl(ACtrl: TControl; ACentered: Boolean; AShared: Boolean = False); reintroduce;
+
+    procedure AddTableCell(AText: string; AStyleNo: Integer; ANewRow: Boolean);
 
     function GetMaxPictureWidth(): Integer;
     { Deletes all text, graphic and other objects from TRichView control }
@@ -357,7 +378,9 @@ type
     { Number of pixels in 1 MSU. Important: if you change it when TRichView
       component is already displayed, you must call Format and Refresh methods after. }
     property VSmallStep: Integer read SmallStep write SetVSmallStep;
-    property LineCount: Integer read GetLineCount;
+
+    property LineCount: Integer read GetItemCount;
+    property ItemCount: Integer read GetItemCount;
 
     property Options: TRVOptions read FOptions write FOptions;
     //property FirstLineVisible: Integer read GetFirstLineVisible;
@@ -495,6 +518,7 @@ begin
   FAllowSelection:= True;
   LastLineFormatted := -1;
   FDefaultAlignment := taLeftJustify;
+  ClearTemporal();
   //Format_(False,0, Canvas, False);
 end;
 
@@ -535,13 +559,19 @@ begin
 
   VisItems.Clear();
   FSubItems.ClearSubitems();
-  if not (rvoFastResize in FOptions) then
+  if not (rvoFastFormatting in FOptions) then
     FSubItems.Clear();
 
   CheckPoints.Clear();
 
   FJumpList.Clear();
   nJmps :=0;
+
+  FPrevItemId := 0;
+  FPrevX := 0;
+  FPrevBelow := 0;
+  FPrevAbove := 0;
+  FPrevBase := 0;
 end;
 
 procedure TCustomRichView.Deselect();
@@ -599,6 +629,7 @@ begin
   end;
   ClearTemporal();
   FSubItems.Clear();
+  ScrollTo(0);
 end;
 
 procedure TCustomRichView.AddFromNewLine(const s: string; StyleNo: Integer);
@@ -802,6 +833,18 @@ begin
   InsertControl(ACtrl);
 end;
 
+procedure TCustomRichView.AddTableCell(AText: string; AStyleNo: Integer; ANewRow: Boolean);
+var
+  Item: TRVItem;
+begin
+  Item := TRVItem.Create();
+  Item.StyleNo := rvsTableCell;
+  Item.FromNewLine := ANewRow;
+  Item.Text := Atext;
+  Items.Add(Item);
+end;
+
+
 function TCustomRichView.GetMaxPictureWidth(): Integer;
 var
   i: Integer;
@@ -832,28 +875,26 @@ begin
     Result := b;
 end;
 
-procedure TCustomRichView.Format_(OnlyResized: Boolean; depth: Integer; Canvas: TCanvas;
-          OnlyTail: Boolean);
+procedure TCustomRichView.Format_(AOnlyResized: Boolean; ADepth: Integer; ACanvas: TCanvas;
+          AOnlyTail: Boolean);
 var
   i: Integer;
-  x, b, d, a: Integer;
-  mx: Integer;
+  iMaxWidth: Integer;
   oldy, oldtextwidth, cw, ch: Integer;
   sad: TScreenAndDevice;
   StyleNo: Integer;
-  StartLine: Integer;
   //StartNo, EndNo, StartOffs, EndOffs: Integer;
 begin
-  if (smallstep = 0)
+  if (SmallStep = 0)
   or (csDesigning in ComponentState)
   or (not Assigned(FStyle))
   or IsSkipFormatting
-  or (depth > 1)
+  or (ADepth > 1)
   then
     Exit;
   IsSkipFormatting := True;
 
-  {if depth = 0 then
+  {if ADepth = 0 then
   begin
     StartNo := 0;
     EndNo := 0;
@@ -866,9 +907,9 @@ begin
 
   oldtextwidth := TextWidth;
 
-  mx := Max(ClientWidth - (FLeftMargin + FRightMargin), GetMaxPictureWidth);
-  if mx < FMinTextWidth then
-    mx := FMinTextWidth;
+  iMaxWidth := Max(ClientWidth - (FLeftMargin + FRightMargin), GetMaxPictureWidth);
+  if iMaxWidth < FMinTextWidth then
+    iMaxWidth := FMinTextWidth;
   if FClientTextWidth then
   begin { widths of pictures and maxtextwidth are ignored }
     TextWidth := ClientWidth - (FLeftMargin + FRightMargin);
@@ -877,67 +918,60 @@ begin
   end
   else
   begin
-    if (mx > FMaxTextWidth) and (FMaxTextWidth > 0) then
+    if (iMaxWidth > FMaxTextWidth) and (FMaxTextWidth > 0) then
       TextWidth := FMaxTextWidth
     else
-      TextWidth := mx;
+      TextWidth := iMaxWidth;
   end;
   // format lines
-  if not (OnlyResized and (TextWidth = OldTextWidth)) then
+  if not (AOnlyResized and (TextWidth = OldTextWidth)) then
   begin
-    if OnlyTail then
+    if not AOnlyTail then
     begin
-      StartLine := LastLineFormatted+1;
-      b := TextHeight;
-    end
-    else
-    begin
-      StartLine := 0;
-      b := 0;
       ClearTemporal();
     end;
 
-    x := 0;
-    d := 0;
-    a := 0;
     sad.LeftMargin := 0;
-    InfoAboutSaD(sad, Canvas);
+    InfoAboutSaD(sad, ACanvas);
     sad.LeftMargin := MulDiv(FLeftMargin, sad.ppixDevice, sad.ppixScreen);
     FPrevStyleNo := -999999;
-    for i := StartLine to Items.Count-1 do
+    for i := FPrevItemId to Items.Count-1 do
     begin
       StyleNo := Items[i].StyleNo;
       if not (((StyleNo = rvsPicture) and (not (rvdoImages in DisplayOptions)))
       or ((StyleNo = rvsComponent) and (not (rvdoComponents in DisplayOptions)))
       or (((StyleNo = rvsBullet) or (StyleNo = rvsHotspot)) and (not (rvdoBullets in DisplayOptions))))
       then
-        FormatItem(i, x, b, d, a, Canvas, sad);
+        FormatItem(i, FPrevX, FPrevBase, FPrevBelow, FPrevAbove, ACanvas, sad);
     end;
-    TextHeight := b + d + 1;
+    TextHeight := FPrevBase + FPrevBelow + 1;
     if TextHeight div SmallStep > 30000 then
       SmallStep := TextHeight div 30000;
+
+    FPrevItemId := Items.Count;
+
     AdjustJumpsCoords();
   end
   else
     AdjustChildrenCoords();
 
   // Update scrollbars and visible position
-  HPos := 0;
-  VPos := 0;
+  //HPos := 0;
+  //VPos := 0;
   cw := ClientWidth;
   ch := ClientHeight;
-  UpdateScrollBars(mx + FLeftMargin + FRightMargin, TextHeight div SmallStep);
+  UpdateScrollBars(iMaxWidth + FLeftMargin + FRightMargin, TextHeight div SmallStep);
   if (cw <> ClientWidth) or (ch <> ClientHeight) then
   begin
     IsSkipFormatting := False;
     ScrollTo(OldY);
-    Format_(OnlyResized, depth+1, Canvas, False);
+    Format_(AOnlyResized, ADepth+1, ACanvas, False);
   end;
-  if OnlyResized then
+  if AOnlyResized then
     ScrollTo(OldY);
-  if OnlyTail then
+  if AOnlyTail and (rvoScrollToEnd in Options) then
     ScrollTo(TextHeight);
-  //if depth=0 then
+  //if ADepth=0 then
   //  SetItemsSelBounds(StartNo, EndNo, StartOffs, EndOffs);
 
   IsSkipFormatting := False;
@@ -964,105 +998,79 @@ begin
 end;
 
 procedure TCustomRichView.FormatTextItem(ItemId: Integer; var x, baseline, prevDesc, prevAbove: Integer;
-          Canvas: TCanvas; var sad: TScreenAndDevice);
+          ACanvas: TCanvas; const sad: TScreenAndDevice);
 var
-  maxChars, j, y, ctrlw, ctrlh : Integer;
-  width, y5, Offs: Integer;
+  maxChars, j, y: Integer;
+  iTextWidth, Offs: Integer;
   Item, SubItem, CurItem: TRVItem;
-{$IFNDEF RICHVIEWDEF4}
-  arr: array[0..1000] of Integer;
-{$ENDIF}
-  char_arr: array[0..1000] of Char;
-  sourceStrPtr, strForAdd, strSpacePos: PChar;
-  sourceStrPtrLen: Integer;
-  strForAddMaxLen: Integer;
+  sourceStr: string;
+  sourceStrLen: Integer;
+  strForAdd: string;
+  strSpacePos: Integer;
   sz: TSIZE;
-  TextMetr: TTextMetric;
   hBetweenLines: Integer;
   IsNewLine, IsCenter: Boolean;
   JmpInfo: TJumpInfo;
 begin
-  width := TextWidth;
-  y := 0;
+  iTextWidth := TextWidth;
   Item := Items[ItemId];
 
   // length of source string
-  sourceStrPtr := PChar(Item.Text);
-  char_arr[0] := #0; // eliminate warning
-  strForAdd := char_arr;
-  strForAddMaxLen := SizeOf(char_arr) - 1;
-  sourceStrPtrLen := StrLen(sourceStrPtr);
+  sourceStr := Item.Text;
+  sourceStrLen := UTF8Length(sourceStr);
+  strForAdd := '';
 
   if FPrevStyleNo <> Item.StyleNo then
   begin
     with FStyle.TextStyles[Item.StyleNo] do
     begin
-      Canvas.Font.Style := Style;
-      Canvas.Font.Size  := Size;
-      Canvas.Font.Name  := FontName;
+      ACanvas.Font.Style := Style;
+      ACanvas.Font.Size  := Size;
+      ACanvas.Font.Name  := FontName;
       {$IFDEF RICHVIEWDEF3}
-      Canvas.Font.CharSet  := CharSet;
+      ACanvas.Font.CharSet  := CharSet;
       {$ENDIF}
     end;
-    TextMetr.tmAscent := 0;
-    GetTextMetrics(Canvas.Handle, TextMetr);
-    hBetweenLines := TextMetr.tmExternalLeading + TextMetr.tmAscent;
+    FTextMetr.tmAscent := 0;
+    GetTextMetrics(ACanvas.Handle, FTextMetr);
   end;
+  hBetweenLines := FTextMetr.tmExternalLeading + FTextMetr.tmAscent;
   IsNewLine := Item.FromNewLine;
   IsCenter := (Item.Alignment = taCenter);
   CurItem := Item;
-  while sourceStrPtrLen > 0 do
+  Offs := 0;
+  while sourceStrLen > 0 do
   begin
     if IsNewLine then
       x := 0;
     sz.cx := 0;
     sz.cy := 0;
     // get number of characters that will fit in specified width
-    {$IFDEF FPC}
-    MyGetTextExtentExPoint(Canvas.Handle,  sourceStrPtr,  sourceStrPtrLen, Width-x,
-    {$ELSE}
-    GetTextExtentExPoint(Canvas.Handle,  sourceStrPtr,  sourceStrPtrLen, Width-x,
-    {$ENDIF}
-                        {$IFDEF RICHVIEWDEF4}
-                        @maxChars, nil,
-                        {$ELSE}
-                        maxChars, arr[0],
-                        {$ENDIF}
-                        sz);
-
+    maxChars := ACanvas.TextFitInfo(sourceStr, iTextWidth-x);
     if maxChars = 0 then
       maxChars := 1;
-    if maxChars > strForAddMaxLen then
-      maxChars := strForAddMaxLen;
-    if maxChars < sourceStrPtrLen then
+
+    strForAdd := UTF8Copy(sourceStr, 1, maxChars);
+    if maxChars < sourceStrLen then
     begin
       // source text not fit to line, need split at space char
-      {if  sourceStrPtr[max] <> ' ' then }
-      StrLCopy(strForAdd, sourceStrPtr, maxChars);
-      strSpacePos := StrRScan(strForAdd, ' ');
-      if strSpacePos <> nil then
+      strSpacePos := UTF8RPos(' ', strForAdd);
+      if strSpacePos > 1 then
       begin
-        maxChars := strSpacePos - strForAdd;
-        StrLCopy(strForAdd, sourceStrPtr, maxChars);
-        Inc(maxChars);
+        maxChars := strSpacePos;
+        strForAdd := UTF8Copy(sourceStr, 1, maxChars);
       end
       else
       begin
         if not IsNewLine then
         begin
           x := 0;
-          IsNewLine := true;
+          IsNewLine := True;
           Continue;
         end;
       end;
-    end
-    else
-    begin
-      StrLCopy(strForAdd, sourceStrPtr, maxChars);
     end;
-    Offs := sourceStrPtr - PChar(Item.Text) + 1;
-    sourceStrPtr := @(sourceStrPtr[maxChars]);
-    if (Offs > 1) or (maxChars < Length(Item.Text)) then
+    if (Offs > 1) or (maxChars < UTF8Length(Item.Text)) then
     begin
       // add subitem
       SubItem := FSubItems.AddSubItem();
@@ -1073,49 +1081,46 @@ begin
       CurItem.Text := strForAdd;
     end;
     CurItem.TextOffs := Offs; // offset in source text
-    {$IFDEF FPC}
-    MyGetTextExtentExPoint(Canvas.Handle,  strForAdd,  StrLen(strForAdd), Width-x,
-    {$ELSE}
-    GetTextExtentExPoint(Canvas.Handle,  strForAdd,  StrLen(strForAdd), Width-x,
-    {$ENDIF}
-       {$IFDEF RICHVIEWDEF4}
-       @maxChars, nil,
-       {$ELSE}
-       maxChars, arr[0],
-       {$ENDIF}
-       sz);
+
+    Inc(Offs, maxChars);
+    sourceStr := UTF8Copy(Item.Text, Offs+1, maxChars);
+
+    sz := ACanvas.TextExtent(strForAdd);
     if not IsNewLine then
     begin
       {continue line}
       if prevAbove < hBetweenLines then
       begin
         j := VisItems.Count-1;
-        if j >= 0 then
+        while (j >= 0) do
         begin
-          repeat
-            Inc(VisItems[j].Top, hBetweenLines - prevAbove);
-            Dec(j);
-          until VisItems[j+1].FromNewLine or (j < 0);
+          Inc(VisItems[j].Top, hBetweenLines - prevAbove);
+          if VisItems[j].FromNewLine then
+            Break;
+          Dec(j);
         end;
+
         Inc(baseline, hBetweenLines - prevAbove);
         prevAbove := hBetweenLines;
       end;
-      y := baseline - TextMetr.tmAscent;
       //CurItem.FromNewLine := False;
     end
     else
     begin
       { new line }
+      Inc(baseline, prevDesc + hBetweenLines);
       if CurItem.IsSubItem then
         CurItem.FromNewLine := True;
       if IsCenter then
-        x := (Width - sz.cx) div 2
+        x := (iTextWidth - sz.cx) div 2
       else
-        x :=0;
-      y := baseline + prevDesc + TextMetr.tmExternalLeading;
-      Inc(baseline, prevDesc + hBetweenLines);
+        x := 0;
+      {y := baseline + prevDesc + FTextMetr.tmExternalLeading;
+      Inc(baseline, prevDesc + hBetweenLines);  }
       prevAbove := hBetweenLines;
     end;
+    y := baseline - FTextMetr.tmAscent;
+
     CurItem.Left   := x + sad.LeftMargin;
     CurItem.Top    := y;
     CurItem.Width  := sz.cx;
@@ -1134,9 +1139,9 @@ begin
       Item.JumpId := nJmps;
       FJumpList.Add(JmpInfo);
     end;
-    sourceStrPtrLen := StrLen(sourceStrPtr);
-    if IsNewLine or (prevDesc < TextMetr.tmDescent) then
-      prevDesc := TextMetr.tmDescent;
+    sourceStrLen := UTF8Length(sourceStr);
+    if IsNewLine or (prevDesc < FTextMetr.tmDescent) then
+      prevDesc := FTextMetr.tmDescent;
     Inc(x, sz.cx);
     IsNewLine := True;
   end; {while sourceStrPtrLen > 0 do}
@@ -1149,16 +1154,15 @@ end;
   prevDesc - Descent (units below the base line) of characters
   prevAbove - ascent (units above the base line) of characters }
 procedure TCustomRichView.FormatItem(ItemId: Integer; var x, baseline, prevDesc, prevAbove: Integer;
-          Canvas: TCanvas; var sad: TScreenAndDevice);
+          ACanvas: TCanvas; const sad: TScreenAndDevice);
 var
   j, y, ctrlw, ctrlh : Integer;
   Item: TRVItem;
   VisItem: TRVVisualItem;
-  IsCenter: Boolean;
   CPInfo: TCPInfo;
   JmpInfo: TJumpInfo;
-  width, y5, Offs: Integer;
-  hBetweenLines: Integer;
+  TabColInfo: TRVTableColInfo;
+  width, y5: Integer;
 begin
   width := TextWidth;
   y := 0;
@@ -1292,8 +1296,46 @@ begin
       prevAbove := y5;
     end;
 
+    rvsTable:
+    begin
+      if Item.FromNewLine then
+      begin
+        // new table
+        //!!FormatTable();
+      end
+      else
+      begin
+        Inc(baseline, prevDesc + FCurTableRowH + 1);
+        prevDesc  := 1;
+        prevAbove := FCurTableRowH + 1;
+      end;
+      FCurTableRow := 0;
+      FCurTableCol := 0;
+    end;
+
+    rvsTableCell:
+    begin
+      if Item.FromNewLine then
+      begin
+        Inc(baseline, prevDesc + FCurTableRowH + 1);
+        prevDesc  := 1;
+        prevAbove := FCurTableRowH + 1;
+
+        Inc(FCurTableRow);
+        FCurTableCol := 0;
+        //!!FCurTableRowH := GetCurTabRowHeight(FCurTableRow);
+      end;
+      Inc(FCurTableCol);
+      //!!TabColInfo := GetCurTabColInfo(FCurTableCol);
+      VisItems.Add(Item);
+      Item.Left   := TabColInfo.l;
+      Item.Top    := TabColInfo.t;
+      Item.Width  := TabColInfo.w;
+      Item.Height := TabColInfo.h;
+    end;
+
   else // rvsText
-    FormatTextItem(ItemId, x, baseline, prevDesc, prevAbove, Canvas, sad);
+    FormatTextItem(ItemId, x, baseline, prevDesc, prevAbove, ACanvas, sad);
   end;
   FPrevStyleNo := Item.StyleNo;
 end;
@@ -2130,6 +2172,8 @@ begin
           end;
         end;
       end;
+    else
+      // no bitmap
     end
   end;
 end;
@@ -2222,7 +2266,7 @@ begin
   end;
 end;
 
-procedure TCustomRichView.FindVisItemForSel(X, Y: Integer; var ItemNo, TextOffs: Integer);
+procedure TCustomRichView.FindVisItemForSel(X, Y: Integer; out ItemNo, TextOffs: Integer);
 var
   StyleNo, i: Integer;
   mid, midtop, midbottom, midleft, midright: Integer;
@@ -2362,7 +2406,7 @@ begin
   end;
 end;
 
-procedure TCustomRichView.FindOrigItemForSel(X, Y: Integer; var ItemNo, TextOffs: Integer);
+procedure TCustomRichView.FindOrigItemForSel(X, Y: Integer; out ItemNo, TextOffs: Integer);
 var
   Item: TRVItem;
   n, offs: Integer;
@@ -2641,7 +2685,7 @@ begin
   FSelEndOffs := EndOffs;
 end;
   {------------------------------------------------------------------}
-function TCustomRichView.GetLineCount(): Integer;
+function TCustomRichView.GetItemCount(): Integer;
 begin
   Result := Items.Count;
 end;
