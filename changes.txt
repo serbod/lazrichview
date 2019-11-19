@@ -4,6 +4,9 @@ Change Log
 [-] feature removed
 [!] important change
 
+2019.11.19 (v0.5.6)
+* fixed selection by mouse
+
 2019.10.02 (v0.5.5)
 * FormatTail() correctly append text to same line
 * fixed text lenght calculation for UTF8

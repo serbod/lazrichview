@@ -36,7 +36,7 @@
 It can be printed and saved as plain text or html file.
 "/>
     <License Value="The MIT License (MIT)"/>
-    <Version Minor="5" Release="5"/>
+    <Version Minor="5" Release="6"/>
     <Files Count="7">
       <Item1>
         <Filename Value="rvfreereg.pas"/>
