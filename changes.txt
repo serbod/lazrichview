@@ -4,6 +4,11 @@ Change Log
 [-] feature removed
 [!] important change
 
+2020.03.12 (v0.5.7)
+* fixed getting text from selection
+* fixed controls placement after format
+* fixed zero division for scroll
+
 2019.11.19 (v0.5.6)
 * fixed selection by mouse
 

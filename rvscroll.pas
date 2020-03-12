@@ -133,6 +133,7 @@ begin
   ScrollInfo.cbSize := SizeOf(ScrollInfo);
   ScrollInfo.fMask := SIF_ALL;
   ScrollInfo.nMin := 0;
+  if SmallStep = 0 then SmallStep := 1;
   ScrollInfo.nPage := ClientHeight div SmallStep;
   ScrollInfo.nMax := YSize;
   ScrollInfo.nPos := VPos;
@@ -314,12 +315,16 @@ begin
   Canvas.Font.Color := clRed;
   Canvas.Font.Size := 2;
   Canvas.FillRect(Canvas.ClipRect);
+  if SmallStep = 0 then
+    SmallStep := 1;
   for i := (Canvas.ClipRect.Top div SmallStep) - 1  to (Canvas.ClipRect.Bottom div SmallStep) + 1 do
     Canvas.TextOut(-HPos, i * SmallStep, IntToStr(i + VPos));
 end;
 {------------------------------------------------------}
 procedure TRVScroller.ScrollTo(y: Integer);
 begin
+  if SmallStep = 0 then
+    SmallStep := 1;
   SetVPos(y div SmallStep);
 end;
 {-------------------------------------------------------}

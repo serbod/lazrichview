@@ -140,14 +140,15 @@ type
     procedure InvalidateJumpRect(no: Integer);
     procedure WMSize(var Message: TWMSize); message WM_SIZE;
     procedure WMEraseBkgnd(var Message: TWMEraseBkgnd); message WM_ERASEBKGND;
-    { Return visual item index (-1 if cursor above limits and -2 if below limits)
-      X, Y - absolute. Use ClickPos.X + HPos, ClickPos.Y + VPos * SmallStep  }
-    function FindVisItemAtPos(X, Y: Integer): Integer;
     { ItemNo - original item index (-1 if cursor above limits and -2 if below limits)
       TextOffs - text offset inside item }
     procedure FindOrigItemForSel(X, Y: Integer; out ItemNo, TextOffs: Integer);
-    { ItemNo - visible item index
-      TextOffs - text offset inside item}
+    { X, Y - absolute. Use ClickPos.X + HPos, ClickPos.Y + VPos * SmallStep
+      ItemNo - visual item index (-1 if cursor above limits and -2 if below limits)
+      TextOffs - text offset inside item (-1 if cursor to the right of item) }
+    procedure FindVisItemAtPos(X, Y: Integer; out ItemNo, TextOffs: Integer);
+    { Same as FindVisItemAtPos, but if cursor out of visual item, returns
+      item to the left of cursor }
     procedure FindVisItemForSel(X, Y: Integer; out ItemNo, TextOffs: Integer);
     function GetItemCount(): Integer;
     procedure CMMouseLeave(var Message: TMessage); message CM_MOUSELEAVE;
@@ -997,7 +998,7 @@ begin
     begin
       VisItem := (Item as TRVVisualItem);
       TControl(VisItem.gr).Left := VisItem.Left;
-      TControl(VisItem.gr).Tag := VisItem.Top;
+      TControl(VisItem.gr).Tag := VisItem.Top - (VPos * SmallStep);
       Tag2Y(TControl(VisItem.gr));
     end;
   end;
@@ -1089,7 +1090,7 @@ begin
     CurItem.TextOffs := Offs; // offset in source text
 
     Inc(Offs, maxChars);
-    sourceStr := UTF8Copy(Item.Text, Offs+1, maxChars);
+    sourceStr := UTF8Copy(Item.Text, Offs+1, MaxInt);
 
     sz := ACanvas.TextExtent(strForAdd);
     if not IsNewLine then
@@ -1184,23 +1185,26 @@ begin
       ctrlw := MulDiv(ctrlw, sad.ppixDevice, sad.ppixScreen);
       ctrlh := MulDiv(ctrlh, sad.ppiyDevice, sad.ppiyScreen);
 
-      Item.Top    := baseline + prevDesc + 1;
-      Item.Width  := ctrlw;
-      Item.Height := ctrlh+1;
+      VisItem.Top    := baseline + prevDesc + 1;
+      VisItem.Width  := ctrlw;
+      VisItem.Height := ctrlh+1;
       if Item.Alignment = taCenter then
       begin
-        Item.Left   := (width-ctrlw) div 2;
-        if Item.Left < 0 then
-          Item.Left := 0;
-        Inc(Item.Left, sad.LeftMargin);
+        VisItem.Left   := (width-ctrlw) div 2;
+        if VisItem.Left < 0 then
+          VisItem.Left := 0;
+        Inc(VisItem.Left, sad.LeftMargin);
       end
       else
       begin
-        Item.Left := sad.LeftMargin;
+        VisItem.Left := sad.LeftMargin;
       end;
+
       TControl(VisItem.gr).Left := VisItem.Left;
-      TControl(VisItem.gr).Tag := VisItem.Top;
+      // from scroll visible position
+      TControl(VisItem.gr).Tag := Item.Top - (VPos * SmallStep);
       Tag2Y(TControl(VisItem.gr));
+
       Inc(baseline, prevDesc + ctrlh + 1);
       prevDesc := 1;
       prevAbove := ctrlh + 1;
@@ -1526,10 +1530,10 @@ end;
 }
 {$IFDEF FPC}
 procedure TxtOut(Canvas: Tcanvas; X,Y: Integer; const Text: String; AItem: TRVItem);
-var
+{var
   Sz: TSize;
   R: TRect;
-  ts: TTextStyle;
+  ts: TTextStyle;}
 begin
   //Sz := Canvas.TextExtent(Text);
   //R := Bounds(X, Y, Sz.cx, Sz.cy);
@@ -2157,6 +2161,8 @@ begin
   begin
     bbHeight := FBackBitmap.Height;
     bbWidth := FBackBitmap.Width;
+    if (bbHeight = 0) or (bbWidth = 0) then
+      Exit;
     case FBackgroundStyle of
       bsTiled:
       begin
@@ -2245,22 +2251,30 @@ begin
   end;
 end;
 
-function TCustomRichView.FindVisItemAtPos(X, Y: Integer): Integer;
+procedure TCustomRichView.FindVisItemAtPos(X, Y: Integer; out ItemNo, TextOffs: Integer);
 var
-  a, b, mid, midtop: Integer;
-  Item: TRVItem;
+  StyleNo, i: Integer;
+  a, b, mid, midtop, midbottom, midleft, midright: Integer;
+  beginline, endline: Integer;
+  Item, ItemMid: TRVItem;
+  {$IFNDEF RICHVIEWDEF4}
+  arr: array[0..1000] of integer;
+  {$ENDIF}
+  sz: TSIZE;
 begin
-  Result := -1;
+  TextOffs := 0;
+  ItemNo := -1;
   if VisItems.Count = 0 then Exit;
 
+  // binary search for Y
   a := 0;
   b := VisItems.Count-1;
   if (VisItems[b].Top + VisItems[b].Height) < Y then
   begin
-    Result := -2;
+    ItemNo := -2;
     Exit;
   end;
-    
+
   while (b - a) > 1 do
   begin
     mid := (a + b) div 2;
@@ -2278,43 +2292,30 @@ begin
   while (mid >= 1) and (VisItems[mid-1].Top + VisItems[mid-1].Height > midtop) do
     Dec(mid);
 
+  // find subitem for X
   Item := VisItems[mid];
   midtop := Item.Top + Item.Height-1;
   while (mid < VisItems.Count) do
   begin
     Item := VisItems[mid];
     if (Item.Top > midtop) then
-      Break;
+    begin
+      // not found X in Y
+      ItemNo := mid-1;
+      TextOffs := -1;
+      Exit;
+    end;
     if (Item.Top <= Y) and (Item.Top + Item.Height > Y)
     and (Item.Left <= X) and (Item.Left + Item.Width > X) then
     begin
-      Result := mid;
-      Exit;
+      ItemNo := mid;
+      Break;
     end;
     Inc(mid);
   end;
-end;
 
-procedure TCustomRichView.FindVisItemForSel(X, Y: Integer; out ItemNo, TextOffs: Integer);
-var
-  StyleNo, i: Integer;
-  mid, midtop, midbottom, midleft, midright: Integer;
-  beginline, endline: Integer;
-  Item, ItemMid: TRVItem;
-  {$IFNDEF RICHVIEWDEF4}
-  arr: array[0..1000] of integer;
-  {$ENDIF}
-  sz: TSIZE;
-begin
-  mid := FindVisItemAtPos(X, Y);
-  if mid < 0 then
+  if ItemNo < 0 then
   begin
-    if mid = -2 then
-    begin
-      mid := VisItems.Count - 1;
-      TextOffs := UTF8Length(VisItems[mid].Text)+1;
-    end;
-    ItemNo := mid;
     Exit;
   end;
 
@@ -2439,6 +2440,28 @@ begin
   end;
 end;
 
+procedure TCustomRichView.FindVisItemForSel(X, Y: Integer; out ItemNo, TextOffs: Integer);
+begin
+  FindVisItemAtPos(X, Y, ItemNo, TextOffs);
+  if ItemNo < 0 then
+  begin
+    if ItemNo = -2 then
+    begin
+      ItemNo := VisItems.Count - 1;
+      TextOffs := UTF8Length(VisItems[ItemNo].Text)+1;
+    end;
+    Exit;
+  end;
+
+  if ItemNo >= 0 then
+  begin
+    if TextOffs < 0 then
+    begin
+      TextOffs := UTF8Length(VisItems[ItemNo].Text) + 1;
+    end;
+  end;
+end;
+
 procedure TCustomRichView.FindOrigItemForSel(X, Y: Integer; out ItemNo, TextOffs: Integer);
 var
   Item: TRVItem;
@@ -2463,16 +2486,36 @@ end;
 function TCustomRichView.FindClickedWord(var sClickedWord: String;
   var StyleNo: Integer): Boolean;
 var
-  no: Integer;
+  no, offs: Integer;
+  iTopPos, iLowPos, iMaxPos: Integer;
+  (*
   {$IFNDEF RICHVIEWDEF4}
   arr: array[0..1000] of integer;
   {$ENDIF}
   sz: TSIZE;
-  max, first, len: Integer;
+  max, first, len: Integer; *)
 begin
   Result := False;
+  FindVisItemAtPos(ClickPos.X + HPos, ClickPos.Y + VPos * SmallStep, no, offs);
+  if (no >= 0) and (offs >= 0) then
+  begin
+    sClickedWord := VisItems[no].Text;
+    iMaxPos := UTF8Length(sClickedWord);
+    // upper bound
+    iTopPos := offs;
+    while (iTopPos < iMaxPos) and ((UTF8Pos(sClickedWord[iTopPos+1], Delimiters) = 0)) do
+      Inc(iTopPos);
+
+    // lower bound
+    iLowPos := offs;
+    while (iLowPos > 2) and ((UTF8Pos(sClickedWord[iLowPos-1], Delimiters) = 0)) do
+      Dec(iLowPos);
+
+    sClickedWord := UTF8Copy(sClickedWord, iLowPos, iTopPos-iLowPos);
+  end;
+  (*
   no := FindVisItemAtPos(ClickPos.X + HPos, ClickPos.Y + VPos * SmallStep);
-  if no <> -1 then
+  if no >= 0 then
   begin
     sClickedWord := VisItems[no].Text;
     StyleNo := VisItems[no].StyleNo;
@@ -2521,6 +2564,7 @@ begin
     end;
     Result := True;
   end;
+  *)
 end;
 {------------------------------------------------------------------}
 procedure TCustomRichView.DblClick();
@@ -2749,10 +2793,10 @@ begin
   EndNo := 0;
   StartOffs := 0;
   EndOffs := 0;
-  GetItemsSelBounds(StartNo, EndNo, StartOffs, EndOffs);
+  GetVisibleSelBounds(StartNo, EndNo, StartOffs, EndOffs);
   if StartNo = EndNo then
   begin
-    Item := Items[StartNo];
+    Item := VisItems[StartNo];
     if Item.StyleNo < 0 then
       Exit;
     Result := UTF8Copy(Item.Text, StartOffs, EndOffs-StartOffs);
@@ -2760,7 +2804,7 @@ begin
   end
   else
   begin
-    Item := Items[StartNo];
+    Item := VisItems[StartNo];
     if Item.StyleNo < 0 then
       s := ''
     else
@@ -2768,7 +2812,7 @@ begin
 
     for i := StartNo + 1 to EndNo do
     begin
-      Item := Items[i];
+      Item := VisItems[i];
       if (Item.StyleNo <> rvsCheckpoint) and Item.FromNewLine then
         s := s + sLineBreak;
       if Item.StyleNo >= 0 then
