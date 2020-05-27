@@ -4,6 +4,10 @@ Change Log
 [-] feature removed
 [!] important change
 
+2020.05.27 (v0.5.8)
+* fixed selection bounds
+! Item.TextOffset now 0-based
+
 2020.03.12 (v0.5.7)
 * fixed getting text from selection
 * fixed controls placement after format

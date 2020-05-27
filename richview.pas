@@ -150,10 +150,12 @@ type
     { Same as FindVisItemAtPos, but if cursor out of visual item, returns
       item to the left of cursor }
     procedure FindVisItemForSel(X, Y: Integer; out ItemNo, TextOffs: Integer);
+    { Find visual item index and text offset for original item index and offset }
+    procedure FindVisForOrig(OrigItemNo, OrigTextOffs: Integer; out VisItemNo, VisTextOffs: Integer);
     function GetItemCount(): Integer;
     procedure CMMouseLeave(var Message: TMessage); message CM_MOUSELEAVE;
     { StartNo, EndNo - visible item index
-      StartOffs, EndOffs - text offset inside item }
+      StartOffs, EndOffs - text offset inside item (0..Length(Item.Text)) }
     procedure GetVisibleSelBounds(out StartNo, EndNo, StartOffs, EndOffs: Integer);
     procedure GetItemsSelBounds(out StartNo, EndNo, StartOffs, EndOffs: Integer);
     procedure SetItemsSelBounds(StartNo, EndNo, StartOffs, EndOffs: Integer);
@@ -529,7 +531,7 @@ begin
   //Format_(False,0, Canvas, False);
 end;
 
-destructor TCustomRichView.Destroy;
+destructor TCustomRichView.Destroy();
 begin
   FreeAndNil(FBackBitmap);
   Clear();
@@ -579,6 +581,7 @@ begin
   FPrevBelow := 0;
   FPrevAbove := 0;
   FPrevBase := 0;
+  SmallStep := 10;
 end;
 
 procedure TCustomRichView.Deselect();
@@ -736,7 +739,7 @@ begin
   Items.Add(Item);
 end;
 
-function TCustomRichView.AddNamedCheckPoint(const CpName: String): Integer;
+function TCustomRichView.AddNamedCheckPoint(const CpName: string): Integer;
 var
   Item: TRVItem;
   CPInfo: TCPInfo;
@@ -1004,8 +1007,8 @@ begin
   end;
 end;
 
-procedure TCustomRichView.FormatTextItem(ItemId: Integer; var x, baseline, prevDesc, prevAbove: Integer;
-          ACanvas: TCanvas; const sad: TScreenAndDevice);
+procedure TCustomRichView.FormatTextItem(ItemId: Integer; var x, baseline,
+  prevdesc, prevabove: Integer; ACanvas: TCanvas; const sad: TScreenAndDevice);
 var
   maxChars, j, y: Integer;
   iTextWidth, Offs: Integer;
@@ -1160,8 +1163,8 @@ end;
   baseline - base Y position of line
   prevDesc - Descent (units below the base line) of characters
   prevAbove - ascent (units above the base line) of characters }
-procedure TCustomRichView.FormatItem(ItemId: Integer; var x, baseline, prevDesc, prevAbove: Integer;
-          ACanvas: TCanvas; const sad: TScreenAndDevice);
+procedure TCustomRichView.FormatItem(ItemId: Integer; var x, baseline,
+  prevdesc, prevabove: Integer; ACanvas: TCanvas; const sad: TScreenAndDevice);
 var
   j, y, ctrlw, ctrlh : Integer;
   Item: TRVItem;
@@ -1651,14 +1654,15 @@ begin
         end
         else
         if ((StartNo < i) and (EndNo > i))
-        or ((StartNo = i) and (EndNo <> i) and (StartOffs <= 1))
-        or ((StartNo <> i) and (EndNo = i) and (EndOffs > UTF8Length(VisItems[i].Text)))
+        or ((StartNo = i) and (EndNo <> i) and (StartOffs >= 1))
+        or ((StartNo <> i) and (EndNo = i) and (EndOffs <= UTF8Length(VisItems[i].Text)))
         then
         begin
           canv.Brush.Style := bsSolid;
           canv.Brush.Color := FStyle.SelColor;
           if not IsHoverNow then
             canv.Font.Color := FStyle.SelTextColor;
+
           {$IFDEF FPC}
           TxtOut(canv, Item.Left-xshift, Item.Top-yshift, Item.Text, Item);
           {$ELSE}
@@ -1670,27 +1674,29 @@ begin
         if (StartNo = i) then
         begin
           canv.Font.Color := TextColor;
-          s := UTF8Copy(Item.Text, 1, StartOffs-1);
+          //s := UTF8Copy(Item.Text, 1, StartOffs-1);
+          s := UTF8Copy(Item.Text, 1, StartOffs);
           canv.TextOut(Item.Left-xshift, Item.Top-yshift, s);
           canv.Brush.Style := bsSolid;
           canv.Brush.Color := FStyle.SelColor;
           if not IsHoverNow then
             canv.Font.Color := FStyle.SelTextColor;
-          if (i <> EndNo) or (EndOffs > UTF8Length(Item.Text)) then
+          if (i <> EndNo) or (EndOffs >= UTF8Length(Item.Text)) then
           begin
+            //st := UTF8Copy(Item.Text, StartOffs, UTF8Length(Item.Text));
+            st := UTF8Copy(Item.Text, StartOffs+1, UTF8Length(Item.Text));
             {$IFDEF FPC}
-            st := UTF8Copy(Item.Text, StartOffs, UTF8Length(Item.Text));
             //TxtOut(canv, Item.Left-xshift + canv.TextWidth(s), Item.Top-yshift, st, Item);
             canv.TextOut(Item.Left-xshift + canv.TextWidth(s), Item.Top-yshift, st);
             {$ELSE}
-            canv.TextOut(Item.Left-xshift + canv.TextWidth(s), Item.Top-yshift,
-                         Copy(Item.Text, StartOffs, Length(Item.Text)));
+            canv.TextOut(Item.Left-xshift + canv.TextWidth(s), Item.Top-yshift, st);
             {$ENDIF}
             canv.Brush.Style := bsClear;
           end
           else
           begin
-            s1 := UTF8Copy(Item.Text, StartOffs, EndOffs-StartOffs);
+            //s1 := UTF8Copy(Item.Text, StartOffs, EndOffs-StartOffs);
+            s1 := UTF8Copy(Item.Text, StartOffs+1, EndOffs-StartOffs);
             {$IFDEF FPC}
             TxtOut(canv, Item.Left - xshift + canv.TextWidth(s), Item.Top-yshift, s1, Item);
             {$ELSE}
@@ -1698,14 +1704,16 @@ begin
             {$ENDIF}
             canv.Font.Color := TextColor;
             canv.Brush.Style := bsClear;
-            canv.TextOut(Item.Left - xshift + canv.TextWidth(s+s1), Item.Top-yshift,
-                         UTF8Copy(Item.Text, EndOffs, UTF8Length(Item.Text)));
+            //st := UTF8Copy(Item.Text, EndOffs, UTF8Length(Item.Text));
+            st := UTF8Copy(Item.Text, EndOffs+1, UTF8Length(Item.Text));
+            canv.TextOut(Item.Left - xshift + canv.TextWidth(s+s1), Item.Top-yshift, st);
           end;
         end
         else
         if (EndNo = i) then
         begin
-          s := UTF8Copy(Item.Text, 1, EndOffs-1);
+          //s := UTF8Copy(Item.Text, 1, EndOffs-1);
+          s := UTF8Copy(Item.Text, 1, EndOffs);
           canv.Brush.Style := bsSolid;
           canv.Brush.Color := FStyle.SelColor;
           if (not IsHoverNow) then
@@ -1717,8 +1725,13 @@ begin
           {$ENDIF}
           canv.Brush.Style := bsClear;
           canv.Font.Color := TextColor;
-          canv.TextOut(Item.Left - xshift + canv.TextWidth(s), Item.Top - yshift,
-                       UTF8Copy(Item.Text, EndOffs, UTF8Length(Item.Text)));
+          //st := UTF8Copy(Item.Text, EndOffs, UTF8Length(Item.Text));
+          st := UTF8Copy(Item.Text, EndOffs+1, UTF8Length(Item.Text));
+          {$IFDEF FPC}
+          TxtOut(canv, Item.Left - xshift + canv.TextWidth(s), Item.Top - yshift, st, Item);
+          {$ELSE}
+          canv.TextOut(Item.Left - xshift + canv.TextWidth(s), Item.Top - yshift, st);
+          {$ENDIF}
         end;
         {$ifdef DEBUG}
         if i = MouseItemId then
@@ -1818,6 +1831,7 @@ begin
   end;
   Update();
 end;
+
 {------------------------------------------------------------------}
 procedure TCustomRichView.CMMouseLeave(var Message: TMessage);
 begin
@@ -1865,7 +1879,8 @@ begin
       ys := ClientHeight;
     no := 0;
     offs := 0;
-    FindVisItemForSel(X + HPos, ys + VPos * SmallStep, no, offs);
+    //FindVisItemForSel(X + HPos, ys + VPos * SmallStep, no, offs);
+    FindOrigItemForSel(X + HPos, ys + VPos * SmallStep, no, offs);
     FSelEndNo := no;
     FselEndOffs := offs;
     Invalidate();
@@ -1941,7 +1956,8 @@ begin
       ys := ClientHeight;
     no := 0;
     offs := 0;
-    FindVisItemForSel(ClickPos.X + HPos, ys + VPos * SmallStep, no, offs);
+    //FindVisItemForSel(ClickPos.X + HPos, ys + VPos * SmallStep, no, offs);
+    FindOrigItemForSel(ClickPos.X + HPos, ys + VPos * SmallStep, no, offs);
     FSelEndNo := no;
     FselEndOffs := offs;
     IsSelection := False;
@@ -2021,7 +2037,8 @@ begin
   if AllowSelection then
   begin
     no := 0;
-    FindVisItemForSel(ClickPos.X + HPos, ClickPos.Y + VPos * SmallStep, no, FSelStartOffs);
+    //FindVisItemForSel(ClickPos.X + HPos, ClickPos.Y + VPos * SmallStep, no, FSelStartOffs);
+    FindOrigItemForSel(ClickPos.X + HPos, ClickPos.Y + VPos * SmallStep, no, FSelStartOffs);
     FSelStartNo := no;
     FSelEndNo   := no;
     IsSelection := (no <> -1);
@@ -2367,27 +2384,27 @@ begin
      exit;
   }
     ItemNo := beginline;
-    if VisItems[ItemNo].StyleNo < 0 then
+    {if VisItems[ItemNo].StyleNo < 0 then
       TextOffs := 0
     else
-      TextOffs := 1;
+      TextOffs := 1;}
     Exit;
   end;
 
   if (Y > midbottom) or (X > midright) then
   begin
     ItemNo := endline + 1;
-    TextOffs := 1;
+    TextOffs := 0;
     if ItemNo >= VisItems.Count then
     begin
       ItemNo := VisItems.Count-1;
       TextOffs := UTF8Length(VisItems[ItemNo].Text)+1;
-    end
-    else
+    end;
+    {else
     begin
       if VisItems[ItemNo].StyleNo < 0 then
         TextOffs := 0;
-    end;
+    end; }
     Exit;
   end;
 
@@ -2428,14 +2445,14 @@ begin
                             {$ENDIF}
                              sz);
         *)
-        Inc(TextOffs);
+        //Inc(TextOffs);
         if TextOffs > UTF8Length(Item.Text) then
           TextOffs := UTF8Length(Item.Text);
-        if (TextOffs < 1) and (UTF8Length(Item.Text) > 0) then
-          TextOffs := 1;
+        if (TextOffs < 0) and (UTF8Length(Item.Text) > 0) then
+          TextOffs := 0;
       end
       else
-        TextOffs := 1;
+        TextOffs := 0;
     end;
   end;
 end;
@@ -2462,9 +2479,61 @@ begin
   end;
 end;
 
+procedure TCustomRichView.FindVisForOrig(OrigItemNo, OrigTextOffs: Integer; out
+  VisItemNo, VisTextOffs: Integer);
+var
+  nLen, offs: Integer;
+  a, b, mid: Integer;
+  Item: TRVItem;
+begin
+  VisItemNo := 0;
+  VisTextOffs := 0;
+  // binary search for OrigItemNo
+  a := 0;
+  b := VisItems.Count-1;
+  if (VisItems[b].ItemIndex < OrigItemNo) then
+  begin
+    Exit;
+  end;
+
+  while (b - a) > 1 do
+  begin
+    mid := (a + b) div 2;
+    if (VisItems[mid].ItemIndex <= OrigItemNo) then
+      a := mid
+    else
+      b := mid;
+  end;
+  if VisItems[b].ItemIndex = OrigItemNo then
+    mid := b
+  else
+    mid := a;
+
+  // find first subitem
+  while (mid > 0) and (VisItems[mid-1].ItemIndex = OrigItemNo) do
+  begin
+    Dec(mid);
+  end;
+  // find offset for subitem
+  offs := OrigTextOffs;
+  while (offs > 0) and (mid < VisItems.Count) do
+  begin
+    Item := VisItems[mid];
+    nLen := UTF8Length(Item.Text);
+    if offs <= nLen then
+    begin
+      VisTextOffs := offs;
+      Break;
+    end;
+    Dec(offs, nLen);
+    Inc(mid);
+  end;
+  VisItemNo := mid;
+end;
+
 procedure TCustomRichView.FindOrigItemForSel(X, Y: Integer; out ItemNo, TextOffs: Integer);
 var
-  Item: TRVItem;
+  Item, Item1: TRVItem;
   n, offs: Integer;
 begin
   FindVisItemForSel(X, Y, n, offs);
@@ -2473,7 +2542,7 @@ begin
     Item := VisItems[n];
     ItemNo := Item.ItemIndex;
 
-    TextOffs := Item.TextOffs - 1 + offs;
+    TextOffs := Item.TextOffs + offs;
   end
   else
   begin
@@ -2483,7 +2552,7 @@ begin
 end;
 
 {------------------------------------------------------------------}
-function TCustomRichView.FindClickedWord(var sClickedWord: String;
+function TCustomRichView.FindClickedWord(var sClickedWord: string;
   var StyleNo: Integer): Boolean;
 var
   no, offs: Integer;
@@ -2502,12 +2571,12 @@ begin
     sClickedWord := VisItems[no].Text;
     iMaxPos := UTF8Length(sClickedWord);
     // upper bound
-    iTopPos := offs;
+    iTopPos := offs+1;
     while (iTopPos < iMaxPos) and ((UTF8Pos(sClickedWord[iTopPos+1], Delimiters) = 0)) do
       Inc(iTopPos);
 
     // lower bound
-    iLowPos := offs;
+    iLowPos := offs+1;
     while (iLowPos > 2) and ((UTF8Pos(sClickedWord[iLowPos-1], Delimiters) = 0)) do
       Dec(iLowPos);
 
@@ -2567,7 +2636,7 @@ begin
   *)
 end;
 {------------------------------------------------------------------}
-procedure TCustomRichView.DblClick();
+procedure TCustomRichView.DblClick;
 var
   StyleNo: Integer;
   sClickedWord: string;
@@ -2655,72 +2724,35 @@ end;
 
 procedure TCustomRichView.GetVisibleSelBounds(out StartNo, EndNo, StartOffs, EndOffs: Integer);
 var
-  Item: TRVItem;
-  i, n, offs: Integer;
+  OrigStartNo, OrigStartOffs, OrigEndNo, OrigEndOffs: Integer;
+  //sVS, sVE, sS, sE: string;
 begin
-  GetItemsSelBounds(StartNo, EndNo, StartOffs, EndOffs);
 
-  if (StartNo <> -1) and (EndNo <> -1) then
+  GetItemsSelBounds(OrigStartNo, OrigEndNo, OrigStartOffs, OrigEndOffs);
+
+  if (OrigStartNo <> -1) and (OrigEndNo <> -1) then
   begin
-    // Start
-    n := StartNo;
-    for i := StartNo to VisItems.Count-1 do
-    begin
-      if (VisItems[i].ItemIndex = StartNo) then
-      begin
-        n := i;
-        Break;
-      end;
-    end;
-    StartNo := n;
-    offs := StartOffs;
-    while n < VisItems.Count do
-    begin
-      Item := VisItems[n];
-      if Item.IsSubItem then
-      begin
-        if Item.TextOffs < offs then
-        begin
-          StartOffs := (offs - Item.TextOffs) + 1;
-          StartNo := n;
-        end
-        else
-          Break;
-      end
-      else
-        Break;
-      Inc(n);
-    end;
 
-    // End
-    n := EndNo;
-    for i := EndNo to VisItems.Count-1 do
+    FindVisForOrig(OrigStartNo, OrigStartOffs, StartNo, StartOffs);
+    FindVisForOrig(OrigEndNo, OrigEndOffs, EndNo, EndOffs);
+    { debug }
+    {if (StartNo >= 0) and (EndNo >= 0) then
     begin
-      if (VisItems[i].ItemIndex = EndNo) then
-      begin
-        n := i;
-        Break;
-      end;
-    end;
-    EndNo := n;
-    offs := EndOffs;
-    while n < VisItems.Count do
-    begin
-      Item := VisItems[n];
-      if Item.IsSubItem then
-      begin
-        if Item.TextOffs < offs then
-        begin
-          EndOffs := (offs - Item.TextOffs) + 1;
-          EndNo := n;
-        end
-        else
-          Break;
-      end
-      else
-        Break;
-      Inc(n);
-    end;
+      sS := UTF8Copy(Items[OrigStartNo].Text, OrigStartOffs+1, MaxInt);
+      sVS := UTF8Copy(VisItems[StartNo].Text, StartOffs+1, MaxInt);
+
+      sE := UTF8Copy(Items[OrigEndNo].Text, 1, OrigEndOffs);
+      sVE := UTF8Copy(VisItems[EndNo].Text, 1, EndOffs);
+
+      Assert(EndOffs >= 0);
+    end; }
+  end
+  else
+  begin
+    StartNo := -1;
+    EndNo := -1;
+    StartOffs := 0;
+    EndOffs := 0;
   end;
 end;
 
@@ -2778,7 +2810,7 @@ begin
     Result := True;
 end;
 {------------------------------------------------------------------}
-function TCustomRichView.GetSelText(): string;
+function TCustomRichView.GetSelText(): String;
 var
   StartNo, EndNo, StartOffs, EndOffs, i: Integer;
   s: string;
@@ -2799,7 +2831,7 @@ begin
     Item := VisItems[StartNo];
     if Item.StyleNo < 0 then
       Exit;
-    Result := UTF8Copy(Item.Text, StartOffs, EndOffs-StartOffs);
+    Result := UTF8Copy(Item.Text, StartOffs+1, EndOffs-StartOffs);
     Exit;
   end
   else
@@ -2808,7 +2840,7 @@ begin
     if Item.StyleNo < 0 then
       s := ''
     else
-      s := UTF8Copy(Item.Text, StartOffs, UTF8Length(Item.Text));
+      s := UTF8Copy(Item.Text, StartOffs+1, UTF8Length(Item.Text));
 
     for i := StartNo + 1 to EndNo do
     begin
@@ -2820,7 +2852,7 @@ begin
         if i <> EndNo then
           s := s + Item.Text
         else
-          s := s + UTF8Copy(Item.Text, 1, EndOffs-1);
+          s := s + UTF8Copy(Item.Text, 1, EndOffs);
       end;
     end;
     {$IFDEF FPC}
@@ -2875,13 +2907,13 @@ begin
   inherited;
 end;
   {------------------------------------------------------------------}
-procedure TCustomRichView.Loaded();
+procedure TCustomRichView.Loaded;
 begin
   inherited Loaded;
-  Format();
+  //Format();
 end;
 
-function TCustomRichView.GetCredits(): string;
+function TCustomRichView.GetCredits: string;
 begin
   Result := 'Lazarus TRichView based on RichView v0.5.1 (www.TCustomRichView.com)';
 end;

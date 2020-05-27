@@ -24,7 +24,7 @@ type
     // text item
     JumpId: Integer;
     Alignment: TAlignment;
-    TextOffs: Integer;      // text part offset, for subitems. In original item always 1
+    TextOffs: Integer;      // text part offset, for subitems. In original item always 0
     IsSubItem: Boolean;     // item in VisItems only, parent is ItemIndex
     FromNewLine: Boolean;
     Text: string;
