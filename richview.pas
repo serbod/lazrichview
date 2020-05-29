@@ -1654,8 +1654,8 @@ begin
         end
         else
         if ((StartNo < i) and (EndNo > i))
-        or ((StartNo = i) and (EndNo <> i) and (StartOffs >= 1))
-        or ((StartNo <> i) and (EndNo = i) and (EndOffs <= UTF8Length(VisItems[i].Text)))
+        or ((StartNo = i) and (EndNo <> i) and (StartOffs <= 1))
+        or ((StartNo <> i) and (EndNo = i) and (EndOffs >= UTF8Length(VisItems[i].Text)))
         then
         begin
           canv.Brush.Style := bsSolid;
@@ -2398,7 +2398,7 @@ begin
     if ItemNo >= VisItems.Count then
     begin
       ItemNo := VisItems.Count-1;
-      TextOffs := UTF8Length(VisItems[ItemNo].Text)+1;
+      TextOffs := UTF8Length(VisItems[ItemNo].Text);
     end;
     {else
     begin
@@ -2465,7 +2465,7 @@ begin
     if ItemNo = -2 then
     begin
       ItemNo := VisItems.Count - 1;
-      TextOffs := UTF8Length(VisItems[ItemNo].Text)+1;
+      TextOffs := UTF8Length(VisItems[ItemNo].Text);
     end;
     Exit;
   end;
@@ -2474,7 +2474,7 @@ begin
   begin
     if TextOffs < 0 then
     begin
-      TextOffs := UTF8Length(VisItems[ItemNo].Text) + 1;
+      TextOffs := UTF8Length(VisItems[ItemNo].Text);
     end;
   end;
 end;
