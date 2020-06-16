@@ -978,8 +978,9 @@ begin
     Format_(AOnlyResized, ADepth+1, ACanvas, False);
   end;
   if AOnlyResized then
-    ScrollTo(OldY);
-  if AOnlyTail and (rvoScrollToEnd in Options) then
+    ScrollTo(OldY)
+  else
+  if {AOnlyTail and} (rvoScrollToEnd in Options) then
     ScrollTo(TextHeight);
   //if ADepth=0 then
   //  SetItemsSelBounds(StartNo, EndNo, StartOffs, EndOffs);
