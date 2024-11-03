@@ -516,6 +516,7 @@ begin
   Width          := 100;
   Height         := 40;
   DisplayOptions := [rvdoImages, rvdoComponents, rvdoBullets];
+  ControlStyle   := ControlStyle + [csOpaque];
   ShareContents  := False;
   FDelimiters    := ' .;,:(){}"';
   IsDrawHover    := False;
